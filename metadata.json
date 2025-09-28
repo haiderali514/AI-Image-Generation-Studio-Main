@@ -1,0 +1,5 @@
+{
+  "name": "Copy of Copy of AI Image Generation Studio",
+  "description": "A powerful and intuitive web application for generating and editing images using AI. Features include text-to-image, draw-to-image, generative fill, and background removal, all powered by Google's Gemini API.",
+  "requestFramePermissions": []
+}
