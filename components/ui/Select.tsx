@@ -43,14 +43,14 @@ const Select: React.FC<SelectProps> = ({ options, value, onChange, label }) => {
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between p-2 bg-gray-700 border border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none text-left"
+        className="w-full flex items-center justify-between p-2 bg-[#1E1E1E] border border-gray-700 rounded-md focus:bg-gray-900/0 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none text-left"
       >
         <span className="text-gray-200">{selectedOption?.label}</span>
         <Icon type="chevron-down" className="text-gray-400" />
       </button>
 
       {isOpen && (
-        <div className="absolute z-10 mt-1 w-full bg-[#3a3a3a] border border-gray-900/50 rounded-md shadow-lg py-1">
+        <div className="absolute z-10 mt-1 w-full bg-[#3a3a3a] border border-black/50 rounded-md shadow-lg py-1">
           {options.map(option => (
             <button
               key={option.value}

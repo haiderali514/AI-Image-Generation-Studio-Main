@@ -159,8 +159,8 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose, setActiveToo
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onMouseDown={onClose}>
-      <div className="bg-[#2D2D2D] w-full max-w-5xl h-[80vh] max-h-[700px] rounded-xl shadow-2xl flex overflow-hidden" onMouseDown={e => e.stopPropagation()}>
-        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors z-10">
+      <div className="bg-[#2D2D2D] w-full max-w-5xl h-[80vh] max-h-[700px] rounded-xl shadow-2xl flex overflow-hidden" onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="create-modal-title">
+        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors z-10" title="Close" aria-label="Close">
           <Icon type="close" />
         </button>
         
@@ -196,7 +196,7 @@ const QuickStartContent: React.FC<{onUpload: (file: File) => void, onToolSelect:
     ];
     return (
         <div className="space-y-8">
-            <h2 className="text-2xl font-semibold text-gray-100">Quick start</h2>
+            <h2 id="create-modal-title" className="text-2xl font-semibold text-gray-100">Quick start</h2>
             <div className="bg-gray-800/30 rounded-lg p-2">
                 <ImageUpload onUpload={onUpload} title="Upload a file to start editing" />
             </div>
@@ -247,7 +247,7 @@ const BlankDocumentContent: React.FC<{
 
     return (
         <div>
-            <h2 className="text-2xl font-semibold text-gray-100 mb-4">Create a blank document</h2>
+            <h2 id="create-modal-title" className="text-2xl font-semibold text-gray-100 mb-4">Create a blank document</h2>
             <div className="flex border-b border-gray-700 mb-6">
                 <TabButton label="Recent" isActive={activeTab === 'recent'} onClick={() => setActiveTab('recent')} />
                 <TabButton label="Saved" isActive={activeTab === 'saved'} onClick={() => setActiveTab('saved')} />
@@ -286,6 +286,7 @@ const BlankDocumentContent: React.FC<{
                                     onClick={(e) => { e.stopPropagation(); setDeletingPresetName(p.name); }} 
                                     className="absolute top-2 right-2 p-1 bg-gray-900/50 rounded-full text-gray-400 hover:text-white hover:bg-red-500/50 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-0"
                                     aria-label={`Delete preset ${p.name}`}
+                                    title={`Delete preset ${p.name}`}
                                     disabled={!!deletingPresetName}
                                 >
                                     <Icon type="trash" />
@@ -310,8 +311,6 @@ const BlankDocumentContent: React.FC<{
 
 const CustomDocumentContent: React.FC<{ settings: any, setSettings: any, onCreate: () => void, onSavePreset: (name: string) => void }> = ({ settings, setSettings, onCreate, onSavePreset }) => {
   const { name, width, height, units, resolution, resolutionUnit, background, customBgColor, preset } = settings;
-  const [isSavingPreset, setIsSavingPreset] = useState(false);
-  const [presetNameToSave, setPresetNameToSave] = useState('');
   const [isAspectRatioLocked, setIsAspectRatioLocked] = useState(false);
   const aspectRatioRef = useRef(width / height);
   const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
@@ -361,14 +360,11 @@ const CustomDocumentContent: React.FC<{ settings: any, setSettings: any, onCreat
   const backgroundOptions = ['White', 'Black', 'Transparent', 'Custom'].map(b => ({ value: b, label: b }));
 
   const handleInitiateSave = () => {
-    setPresetNameToSave(name);
-    setIsSavingPreset(true);
+    const presetName = prompt('Enter a name for your preset:', name);
+    if (presetName) {
+      onSavePreset(presetName);
+    }
   };
-  const handleConfirmSave = () => {
-    onSavePreset(presetNameToSave);
-    setIsSavingPreset(false);
-  };
-  const handleCancelSave = () => setIsSavingPreset(false);
 
   const toggleLock = () => {
     if (!isAspectRatioLocked) {
@@ -422,93 +418,86 @@ const CustomDocumentContent: React.FC<{ settings: any, setSettings: any, onCreat
   const orientation = width >= height ? 'landscape' : 'portrait';
 
   return (
-    <div className="flex flex-col h-full max-w-md mx-auto">
-      <h2 className="text-2xl font-semibold text-gray-100 mb-6">Create a custom blank document</h2>
-      <div className="flex-1 space-y-5 pr-4 overflow-y-auto">
-        {isSavingPreset ? (
-          <div className="p-4 bg-gray-800/50 rounded-lg border border-gray-600 space-y-3">
-            <label htmlFor="presetName" className="block text-sm font-semibold text-gray-300">Preset name</label>
-            <Input id="presetName" value={presetNameToSave} onChange={e => setPresetNameToSave(e.target.value)} autoFocus onKeyDown={(e) => e.key === 'Enter' && handleConfirmSave()} />
-            <div className="flex justify-end space-x-2 pt-2">
-              <Button variant="secondary" onClick={handleCancelSave} className="!px-4 !py-1 text-sm !bg-gray-600 hover:!bg-gray-500">Cancel</Button>
-              <Button onClick={handleConfirmSave} className="!bg-blue-600 hover:!bg-blue-500 !px-4 !py-1 text-sm">Save</Button>
+    <div className="flex flex-col h-full">
+      <div className="flex-1 pr-4 overflow-y-auto">
+        <h2 id="create-modal-title" className="text-2xl font-semibold text-gray-100 mb-6">Create a custom blank document</h2>
+        <div className="space-y-5 max-w-lg">
+          <div>
+            <label htmlFor="docName" className="block text-sm font-medium text-gray-400 mb-1">Document name <span className="text-red-400">*</span></label>
+            <div className="relative">
+              <Input id="docName" value={name} onChange={e => updateSetting('name', e.target.value)} />
+               <div className="absolute right-1 top-1/2 -translate-y-1/2">
+                  <button onClick={handleInitiateSave} title="Save Preset" className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-600 rounded-md transition-colors" aria-label="Save preset">
+                      <Icon type="download" />
+                  </button>
+              </div>
             </div>
           </div>
-        ) : (
-            <div>
-              <label htmlFor="docName" className="block text-sm font-medium text-gray-400 mb-1">Document name <span className="text-red-400">*</span></label>
-              <div className="relative">
-                <Input id="docName" value={name} onChange={e => updateSetting('name', e.target.value)} />
-                 <div className="absolute right-1 top-1/2 -translate-y-1/2">
-                    <button onClick={handleInitiateSave} title="Save Preset" className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-600 rounded-md transition-colors" aria-label="Save preset">
-                        <Icon type="download" />
-                    </button>
+          
+          <Select label="Preset" options={filteredPresetOptions} value={preset} onChange={handlePresetChange} />
+  
+          <div className="grid grid-cols-2 gap-x-6 items-start">
+            {/* Left Column for Width/Height/Lock */}
+            <div className="flex items-center space-x-2">
+              <div className="flex-1 space-y-2">
+                <Input label="Width" type="number" value={width} onChange={e => handleWidthChange(e.target.value)} />
+                <Input label="Height" type="number" value={height} onChange={e => handleHeightChange(e.target.value)} />
+              </div>
+              <div className="pt-7">
+                <button onClick={toggleLock} title={isAspectRatioLocked ? "Unlock aspect ratio" : "Lock aspect ratio"} className="p-2 rounded-md text-gray-500 hover:bg-gray-700 hover:text-white transition-colors">
+                  <Icon type={isAspectRatioLocked ? 'lock' : 'unlock'} className="w-5 h-5"/>
+                </button>
+              </div>
+            </div>
+
+            {/* Right Column for Units/Orientation */}
+            <div className="space-y-5">
+              <Select label="Units" options={unitOptions} value={units} onChange={val => updateSetting('units', val)} />
+              <div>
+                <label className="block text-sm font-medium text-gray-400 mb-1">Orientation</label>
+                <div className="flex space-x-2">
+                    <button onClick={() => handleOrientationChange('portrait')} className={`p-2 rounded-md transition-colors ${orientation === 'portrait' ? 'bg-gray-500 text-white' : 'bg-gray-800/50 border border-gray-600 hover:bg-gray-700'}`}><Icon type="orientation-portrait"/></button>
+                    <button onClick={() => handleOrientationChange('landscape')} className={`p-2 rounded-md transition-colors ${orientation === 'landscape' ? 'bg-gray-500 text-white' : 'bg-gray-800/50 border border-gray-600 hover:bg-gray-700'}`}><Icon type="orientation-landscape"/></button>
                 </div>
               </div>
             </div>
-        )}
-        
-        <Select label="Preset" options={filteredPresetOptions} value={preset} onChange={handlePresetChange} />
-
-        <div className="grid grid-cols-[1fr,auto,1fr] items-end gap-x-4 gap-y-5">
-            <Input label="Width" type="number" value={width} onChange={e => handleWidthChange(e.target.value)} />
-            
-            <div className="row-span-2 flex items-center justify-center h-full">
-                <button onClick={toggleLock} title={isAspectRatioLocked ? "Constrain aspect ratio" : "Do not constrain aspect ratio"} className="p-1 my-1 rounded-md text-gray-500 hover:bg-gray-700 hover:text-white transition-colors">
-                    <Icon type={isAspectRatioLocked ? 'lock' : 'unlock'} className="w-5 h-5"/>
-                </button>
-            </div>
-
-            <Select label="Units" options={unitOptions} value={units} onChange={val => updateSetting('units', val)} />
-            
-            <Input label="Height" type="number" value={height} onChange={e => handleHeightChange(e.target.value)} />
-            
-            <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">Orientation</label>
-                <div className="flex space-x-2">
-                    <button onClick={() => handleOrientationChange('portrait')} className={`p-2 rounded-md transition-colors ${orientation === 'portrait' ? 'bg-gray-500 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}><Icon type="orientation-portrait"/></button>
-                    <button onClick={() => handleOrientationChange('landscape')} className={`p-2 rounded-md transition-colors ${orientation === 'landscape' ? 'bg-gray-500 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}><Icon type="orientation-landscape"/></button>
-                </div>
-            </div>
-        </div>
-        
-        <div className="grid grid-cols-2 gap-4">
-            <Input label="Resolution" type="number" value={resolution} onChange={e => updateSetting('resolution', parseInt(e.target.value))} />
-            <Select label="&nbsp;" options={resolutionUnitOptions} value={resolutionUnit} onChange={val => updateSetting('resolutionUnit', val)} />
-        </div>
-
-        <div className="relative">
-             <label className="block text-sm font-medium text-gray-400 mb-1">Background contents</label>
-             <div className="flex items-center space-x-2">
-                <div className="flex-1">
-                  <Select options={backgroundOptions} value={background} onChange={val => updateSetting('background', val)} />
-                </div>
-                <div className="relative" ref={colorPickerRef}>
-                  <button
-                    onClick={() => background === 'Custom' && setIsColorPickerOpen(p => !p)}
-                    className="w-10 h-10 p-0 border border-gray-600 rounded cursor-pointer disabled:cursor-not-allowed"
-                    disabled={background !== 'Custom'}
-                    style={{ backgroundColor: background === 'White' ? '#FFFFFF' : background === 'Black' ? '#000000' : background === 'Transparent' ? 'transparent' : customBgColor, backgroundImage: background === 'Transparent' ? `repeating-conic-gradient(#808080 0% 25%, transparent 0% 50%)` : 'none', backgroundSize: '10px 10px'}}
+          </div>
+          
+          <div className="grid grid-cols-2 gap-x-6">
+              <Input label="Resolution" type="number" value={resolution} onChange={e => updateSetting('resolution', parseInt(e.target.value))} />
+              <Select label="&nbsp;" options={resolutionUnitOptions} value={resolutionUnit} onChange={val => updateSetting('resolutionUnit', val)} />
+          </div>
+  
+          <div className="flex items-end space-x-2">
+              <div className="flex-1">
+                <Select label="Background contents" options={backgroundOptions} value={background} onChange={val => updateSetting('background', val)} />
+              </div>
+              <div className="relative" ref={colorPickerRef}>
+                <button
+                  onClick={() => background === 'Custom' && setIsColorPickerOpen(p => !p)}
+                  className="w-10 h-10 p-0 border border-gray-600 rounded-md cursor-pointer disabled:cursor-not-allowed"
+                  disabled={background !== 'Custom'}
+                  style={{ backgroundColor: background === 'White' ? '#FFFFFF' : background === 'Black' ? '#000000' : background === 'Transparent' ? 'transparent' : customBgColor, backgroundImage: background === 'Transparent' ? `repeating-conic-gradient(#808080 0% 25%, transparent 0% 50%)` : 'none', backgroundSize: '10px 10px'}}
+                />
+                {isColorPickerOpen && background === 'Custom' && (
+                  <ColorPicker
+                    color={customBgColor}
+                    onChange={color => updateSetting('customBgColor', color)}
+                    onClose={() => setIsColorPickerOpen(false)}
                   />
-                  {isColorPickerOpen && background === 'Custom' && (
-                    <ColorPicker
-                      color={customBgColor}
-                      onChange={color => updateSetting('customBgColor', color)}
-                      onClose={() => setIsColorPickerOpen(false)}
-                    />
-                  )}
-                </div>
-             </div>
+                )}
+              </div>
+           </div>
+          
+          <div>
+              <p className="text-sm text-gray-500">Color mode</p>
+              <p className="text-sm font-medium text-gray-300">RGB 8 bit</p>
+          </div>
+  
         </div>
-        
-        <div>
-            <p className="text-sm text-gray-500">Color mode</p>
-            <p className="text-sm font-medium text-gray-300">RGB 8 bit</p>
-        </div>
-
       </div>
       <div className="flex justify-end pt-6 border-t border-gray-700/50">
-        <Button onClick={onCreate} className="!bg-blue-600 hover:!bg-blue-500 px-8">Create</Button>
+        <button onClick={onCreate} className="bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2 px-8 rounded-md transition-colors">Create</button>
       </div>
     </div>
   );
@@ -520,7 +509,7 @@ const Input: React.FC<{label?: string, value: any, onChange: any, type?: string,
         <div className="relative">
             <input 
                 {...props}
-                className="w-full p-2 bg-gray-800/50 border border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                className="w-full p-2 bg-[#1E1E1E] border border-gray-700 rounded-md focus:bg-gray-900/0 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
             />
         </div>
     </div>

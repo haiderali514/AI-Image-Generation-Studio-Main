@@ -88,7 +88,7 @@ const RemoveBackgroundPanel: React.FC = () => {
             )}
             {error && <p className="text-red-400 text-sm p-4 text-center">{error}</p>}
           </div>
-          <Button onClick={handleDownload} disabled={!resultImage || isLoading} icon={<Icon type="download"/>} className="w-full">
+          <Button onClick={handleDownload} disabled={!resultImage || isLoading} icon={<Icon type="download"/>} className="w-full" title="Download image with transparent background">
             Save Image
           </Button>
         </div>

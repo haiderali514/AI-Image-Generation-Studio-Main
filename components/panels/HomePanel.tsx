@@ -62,15 +62,15 @@ const HomePanel: React.FC<HomePanelProps> = ({ setActiveTool }) => {
   ]
 
   return (
-    <div className="p-6 md:p-8 space-y-10">
+    <div className="space-y-10">
       <header className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">Welcome to Photoshop</h1>
           <p className="text-gray-400">What would you like to create today?</p>
         </div>
         <div className="flex items-center space-x-4 text-gray-400">
-            <button className="hover:text-white transition-colors"><Icon type="notification"/></button>
-            <button className="hover:text-white transition-colors"><Icon type="profile"/></button>
+            <button className="hover:text-white transition-colors" title="Notifications"><Icon type="notification"/></button>
+            <button className="hover:text-white transition-colors" title="Your Profile"><Icon type="profile"/></button>
         </div>
       </header>
 

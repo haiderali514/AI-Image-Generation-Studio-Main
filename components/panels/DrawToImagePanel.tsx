@@ -114,14 +114,14 @@ const DrawToImagePanel: React.FC = () => {
 
                     <label className="text-sm font-medium text-gray-300">Shape</label>
                     <div className="flex items-center space-x-2">
-                        <button onClick={() => setBrushShape('round')} className={`p-1.5 rounded-md transition-colors ${brushShape === 'round' ? 'bg-indigo-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-300'}`} aria-label="Round brush tip"><Icon type="brush-round" /></button>
-                        <button onClick={() => setBrushShape('square')} className={`p-1.5 rounded-md transition-colors ${brushShape === 'square' ? 'bg-indigo-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-300'}`} aria-label="Square brush tip"><Icon type="brush-square" /></button>
+                        <button onClick={() => setBrushShape('round')} className={`p-1.5 rounded-md transition-colors ${brushShape === 'round' ? 'bg-indigo-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-300'}`} aria-label="Round brush tip" title="Round brush tip"><Icon type="brush-round" /></button>
+                        <button onClick={() => setBrushShape('square')} className={`p-1.5 rounded-md transition-colors ${brushShape === 'square' ? 'bg-indigo-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-300'}`} aria-label="Square brush tip" title="Square brush tip"><Icon type="brush-square" /></button>
                     </div>
                 </div>
                 <div className="flex items-center justify-end space-x-2 pt-2 border-t border-gray-700">
-                    <Button onClick={() => canvasRef.current?.undo()} disabled={!historyState.canUndo} variant="secondary" icon={<Icon type="undo" />} aria-label="Undo" />
-                    <Button onClick={() => canvasRef.current?.redo()} disabled={!historyState.canRedo} variant="secondary" icon={<Icon type="redo" />} aria-label="Redo" />
-                    <Button onClick={handleClearCanvas} variant="secondary" icon={<Icon type="clear" />}>Clear</Button>
+                    <Button onClick={() => canvasRef.current?.undo()} disabled={!historyState.canUndo} variant="secondary" icon={<Icon type="undo" />} aria-label="Undo" title="Undo (Ctrl+Z)" />
+                    <Button onClick={() => canvasRef.current?.redo()} disabled={!historyState.canRedo} variant="secondary" icon={<Icon type="redo" />} aria-label="Redo" title="Redo (Ctrl+Y)" />
+                    <Button onClick={handleClearCanvas} variant="secondary" icon={<Icon type="clear" />} title="Clear entire canvas">Clear</Button>
                 </div>
             </div>
         </div>
@@ -163,7 +163,7 @@ const DrawToImagePanel: React.FC = () => {
              {!isLoading && generatedImage && (
                 <>
                   <img src={generatedImage} alt="Generated from drawing" className="object-contain max-w-full max-h-full rounded-md" />
-                  <Button onClick={handleDownload} variant="secondary" className="absolute bottom-4 right-4" icon={<Icon type="download" />}>
+                  <Button onClick={handleDownload} variant="secondary" className="absolute bottom-4 right-4" icon={<Icon type="download" />} title="Download image">
                     Save Image
                   </Button>
                 </>

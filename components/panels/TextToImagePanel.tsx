@@ -190,7 +190,7 @@ const TextToImagePanel: React.FC = () => {
           {!isLoading && generatedImage && (
             <>
               <img src={generatedImage} alt="Generated" className="object-contain max-w-full max-h-full rounded-md" />
-              <Button onClick={handleDownload} variant="secondary" className="absolute bottom-4 right-4" icon={<Icon type="download" />}>
+              <Button onClick={handleDownload} variant="secondary" className="absolute bottom-4 right-4" icon={<Icon type="download" />} title="Download image">
                 Save Image
               </Button>
             </>

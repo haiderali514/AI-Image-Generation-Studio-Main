@@ -30,7 +30,7 @@ const RecentFilesPanel: React.FC = () => {
 
 
     return (
-        <div className="p-6 md:p-8">
+        <div>
              <header className="flex justify-between items-center mb-6">
                 <h1 className="text-3xl font-bold">Recent</h1>
                 <button className="text-sm font-semibold text-blue-400 hover:text-blue-300 transition-colors bg-gray-800 px-4 py-2 rounded-lg">View all files</button>

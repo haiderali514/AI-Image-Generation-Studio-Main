@@ -171,16 +171,16 @@ const GenerativeFillPanel: React.FC = () => {
 
                    <label className="text-sm font-medium text-gray-300">Shape</label>
                    <div className="flex items-center space-x-2">
-                       <button onClick={() => setBrushShape('round')} className={`p-1.5 rounded-md transition-colors ${brushShape === 'round' ? 'bg-indigo-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-300'}`} aria-label="Round brush tip"><Icon type="brush-round" /></button>
-                       <button onClick={() => setBrushShape('square')} className={`p-1.5 rounded-md transition-colors ${brushShape === 'square' ? 'bg-indigo-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-300'}`} aria-label="Square brush tip"><Icon type="brush-square" /></button>
+                       <button onClick={() => setBrushShape('round')} className={`p-1.5 rounded-md transition-colors ${brushShape === 'round' ? 'bg-indigo-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-300'}`} aria-label="Round brush tip" title="Round brush tip"><Icon type="brush-round" /></button>
+                       <button onClick={() => setBrushShape('square')} className={`p-1.5 rounded-md transition-colors ${brushShape === 'square' ? 'bg-indigo-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-300'}`} aria-label="Square brush tip" title="Square brush tip"><Icon type="brush-square" /></button>
                    </div>
                 </div>
                  <div className="flex items-center justify-between pt-2 border-t border-gray-700">
-                    <Button onClick={() => {setImageBase64(undefined); setUploadedImage(null);}} variant="secondary">Change Image</Button>
+                    <Button onClick={() => {setImageBase64(undefined); setUploadedImage(null);}} variant="secondary" title="Choose a different image">Change Image</Button>
                     <div className="flex items-center space-x-2">
-                      <Button onClick={() => canvasRef.current?.undo()} disabled={!historyState.canUndo} variant="secondary" icon={<Icon type="undo" />} aria-label="Undo" />
-                      <Button onClick={() => canvasRef.current?.redo()} disabled={!historyState.canRedo} variant="secondary" icon={<Icon type="redo" />} aria-label="Redo" />
-                      <Button onClick={handleClearMask} variant="secondary" icon={<Icon type="clear" />}>Clear Mask</Button>
+                      <Button onClick={() => canvasRef.current?.undo()} disabled={!historyState.canUndo} variant="secondary" icon={<Icon type="undo" />} aria-label="Undo" title="Undo mask drawing (Ctrl+Z)" />
+                      <Button onClick={() => canvasRef.current?.redo()} disabled={!historyState.canRedo} variant="secondary" icon={<Icon type="redo" />} aria-label="Redo" title="Redo mask drawing (Ctrl+Y)" />
+                      <Button onClick={handleClearMask} variant="secondary" icon={<Icon type="clear" />} title="Clear entire mask">Clear Mask</Button>
                     </div>
                  </div>
             </div>
@@ -223,7 +223,7 @@ const GenerativeFillPanel: React.FC = () => {
              {!isLoading && resultImage && (
                 <>
                   <img src={resultImage} alt="Generative fill result" className="object-contain max-w-full max-h-full rounded-md" />
-                  <Button onClick={handleDownload} variant="secondary" className="absolute bottom-4 right-4" icon={<Icon type="download" />}>
+                  <Button onClick={handleDownload} variant="secondary" className="absolute bottom-4 right-4" icon={<Icon type="download" />} title="Download image">
                     Save Image
                   </Button>
                 </>

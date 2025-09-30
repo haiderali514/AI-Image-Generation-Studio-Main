@@ -24,6 +24,7 @@ const NavButton: React.FC<{
       onClick={onClick}
       className={`${baseClasses} ${isActive ? activeClasses : inactiveClasses}`}
       aria-label={label}
+      title={label}
     >
       {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 bg-blue-500 rounded-r-full"></div>}
       <span className="w-8 h-8 flex items-center justify-center">{icon}</span>
@@ -48,6 +49,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTool, setActiveTool, onOpenCrea
       
       <button 
         onClick={onOpenCreateModal}
+        title="Create new file"
         className="w-full flex items-center p-3 mb-6 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-500 transition-colors duration-200 shadow-md">
         <span className="w-8 h-8 flex items-center justify-center"><Icon type="plus" /></span>
         <span className="font-medium ml-3 hidden group-hover:inline whitespace-nowrap">Create</span>
