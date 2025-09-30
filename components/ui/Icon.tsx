@@ -1,7 +1,7 @@
 
 import React from 'react';
 
-type IconType = 'text' | 'draw' | 'fill' | 'cut' | 'logo' | 'upload' | 'clear' | 'download' | 'brush-round' | 'brush-square' | 'sparkle' | 'undo' | 'redo' | 'home' | 'files' | 'plus' | 'crop' | 'color-pop' | 'notification' | 'profile' | 'close' | 'search' | 'image' | 'document' | 'orientation-portrait' | 'orientation-landscape' | 'check' | 'chevron-down' | 'save' | 'trash' | 'lock' | 'unlock';
+type IconType = 'text' | 'draw' | 'fill' | 'cut' | 'logo' | 'upload' | 'clear' | 'download' | 'brush-round' | 'brush-square' | 'sparkle' | 'undo' | 'redo' | 'home' | 'files' | 'plus' | 'crop' | 'color-pop' | 'notification' | 'profile' | 'close' | 'search' | 'image' | 'document' | 'orientation-portrait' | 'orientation-landscape' | 'check' | 'chevron-down' | 'save' | 'trash' | 'lock' | 'unlock' | 'edit' | 'zoom-in' | 'zoom-out' | 'eraser' | 'shapes';
 
 interface IconProps {
   type: IconType;
@@ -108,6 +108,21 @@ const icons: Record<IconType, React.ReactNode> = {
   ),
   unlock: (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.72"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.72-1.72"/></svg>
+  ),
+  edit: (
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+  ),
+  'zoom-in': (
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+  ),
+  'zoom-out': (
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+  ),
+  eraser: (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21H7Z"/><path d="M18 9 9.5 17.5"/></svg>
+  ),
+  shapes: (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"></rect><circle cx="15.5" cy="15.5" r="4.5"></circle></svg>
   ),
 };
 

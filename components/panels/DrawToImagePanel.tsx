@@ -4,7 +4,8 @@ import Spinner from '../ui/Spinner';
 import Canvas, { CanvasHandle } from '../ui/Canvas';
 import * as geminiService from '../../services/geminiService';
 import Icon from '../ui/Icon';
-import { Tool } from '../../types';
+// FIX: Import EditorTool to use for the Canvas component's activeTool prop.
+import { Tool, EditorTool } from '../../types';
 
 const CANVAS_SIZE = 512;
 type BrushShape = 'round' | 'butt' | 'square';
@@ -97,7 +98,8 @@ const DrawToImagePanel: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 flex-1">
         <div className="flex flex-col space-y-4 items-center">
             <h2 className="text-2xl font-bold text-indigo-400 self-start">Sketch Your Idea</h2>
-            <Canvas ref={canvasRef} width={CANVAS_SIZE} height={CANVAS_SIZE} brushColor={brushColor} brushSize={brushSize} brushOpacity={brushOpacity} brushShape={brushShape} clearToken={clearCanvasToken} onHistoryChange={setHistoryState}/>
+            {/* FIX: Add the required 'activeTool' prop to the Canvas component. */}
+            <Canvas ref={canvasRef} width={CANVAS_SIZE} height={CANVAS_SIZE} brushColor={brushColor} brushSize={brushSize} brushOpacity={brushOpacity} brushShape={brushShape} clearToken={clearCanvasToken} onHistoryChange={setHistoryState} activeTool={EditorTool.BRUSH}/>
             <div className="p-4 bg-gray-800/50 border border-gray-700/50 rounded-lg w-full max-w-[512px] space-y-4">
                 <div className="grid grid-cols-[auto,1fr] items-center gap-x-4 gap-y-3">
                     <label htmlFor="brushColor" className="text-sm font-medium text-gray-300">Color</label>

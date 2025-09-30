@@ -1,55 +1,34 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Tool } from '../../types';
+import { Tool, DocumentSettings } from '../../types';
 import Icon from '../ui/Icon';
-import ImageUpload from '../ui/ImageUpload';
-import Button from '../ui/Button';
-import { fileToBase64 } from '../../utils/imageUtils';
-import Select from '../ui/Select';
 import ColorPicker from '../ui/ColorPicker';
+import Input from '../ui/Input';
+import { CustomPreset, Preset, mostUsedPresets, photoPresets, socialMediaPresets, filmAndVideoPresets, defaultPreset, getCustomPresets, saveCustomPreset, deleteCustomPreset, renameCustomPreset } from '../../utils/presets';
+import CreateModalNav, { ModalView } from './create/CreateModalNav';
+import QuickStartContent from './create/QuickStartContent';
+import Select from '../ui/Select';
 
 
 interface CreateModalProps {
   isOpen: boolean;
   onClose: () => void;
-  setActiveTool: (tool: Tool) => void;
+  onCreate: (settings: DocumentSettings) => void;
 }
 
-type ModalView = 'quickStart' | 'blankDoc' | 'customDoc';
-
-interface CustomPreset {
-  name: string;
-  w: number;
-  h: number;
-  res: number;
-  units: string;
-  bg: string;
-  bgColor?: string;
-}
-
-const defaultPresets: (Partial<CustomPreset> & { name: string; w: number; h: number; })[] = [
-    { name: 'HDTV 1080p', w: 1920, h: 1080, res: 72 },
-    { name: 'Default', w: 1510, h: 1080, res: 72 },
-    { name: 'Instagram Post', w: 1080, h: 1080, res: 72 },
-    { name: 'Instagram Story', w: 1080, h: 1920, res: 72 },
-    { name: 'A4 Document', w: 2480, h: 3508, res: 300 },
-];
-
-
-const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose, setActiveTool }) => {
+const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose, onCreate }) => {
   const [activeView, setActiveView] = useState<ModalView>('quickStart');
   
   // State for the custom document form
-  const [docSettings, setDocSettings] = useState({
+  const [docSettings, setDocSettings] = useState<DocumentSettings>({
     name: 'Untitled-1',
-    width: 1510,
-    height: 1080,
-    units: 'Pixels',
-    resolution: 72,
+    width: defaultPreset.w,
+    height: defaultPreset.h,
+    units: defaultPreset.units ?? 'Pixels',
+    resolution: defaultPreset.res ?? 72,
     resolutionUnit: 'ppi',
-    background: 'White',
+    background: defaultPreset.bg ?? 'White',
     customBgColor: '#FFFFFF',
-    preset: 'Default',
   });
   
   // State for presets
@@ -57,24 +36,12 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose, setActiveToo
 
   useEffect(() => {
     if (isOpen) {
-      const savedPresets = localStorage.getItem('photoshop-ai-presets');
-      if (savedPresets) {
-        setCustomPresets(JSON.parse(savedPresets));
-      }
-      // Reset to default view when opening
+      setCustomPresets(getCustomPresets());
       setActiveView('quickStart');
     }
   }, [isOpen]);
 
-  const handleSavePreset = (presetName: string) => {
-    if (!presetName.trim()) {
-        alert('Preset name cannot be empty.');
-        return;
-    }
-    if (customPresets.some(p => p.name === presetName)) {
-        alert('A preset with this name already exists. Please choose a different name or delete the existing one.');
-        return;
-    }
+  const handleSavePreset = (presetName: string): boolean => {
     const newPreset: CustomPreset = {
         name: presetName,
         w: docSettings.width,
@@ -84,33 +51,48 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose, setActiveToo
         bg: docSettings.background,
         bgColor: docSettings.customBgColor
     };
-    const updatedPresets = [...customPresets, newPreset];
-    setCustomPresets(updatedPresets);
-    localStorage.setItem('photoshop-ai-presets', JSON.stringify(updatedPresets));
-    alert(`Preset "${presetName}" saved!`);
+    const result = saveCustomPreset(newPreset);
+    if (result.success) {
+      alert(result.message);
+    } else {
+      alert(result.message);
+    }
+    setCustomPresets(result.presets);
+    return result.success;
   };
 
   const handleDeletePreset = (presetName: string) => {
-      const updatedPresets = customPresets.filter(p => p.name !== presetName);
+      const updatedPresets = deleteCustomPreset(presetName);
       setCustomPresets(updatedPresets);
-      localStorage.setItem('photoshop-ai-presets', JSON.stringify(updatedPresets));
+  };
+  
+  const handleRenamePreset = (oldName: string, newName: string): boolean => {
+    const result = renameCustomPreset(oldName, newName);
+    if (!result.success) {
+      alert(result.message);
+    }
+    setCustomPresets(result.presets);
+    return result.success;
   };
 
-
   const handleToolSelect = useCallback((tool: Tool) => {
-    setActiveTool(tool);
+    // This function is now primarily for quick-start tools that don't create a blank canvas
+    // For now, we will just log it. A future implementation could open a specific panel.
+    console.log("Selected tool:", tool);
     onClose();
-  }, [setActiveTool, onClose]);
+  }, [onClose]);
 
   const handleImageUpload = useCallback(async (file: File) => {
+    // A future implementation would open the editor with this image
+    console.log("Uploaded file:", file.name);
     handleToolSelect(Tool.GENERATIVE_FILL);
   }, [handleToolSelect]);
   
   const handleCreateCustom = () => {
-    handleToolSelect(Tool.TEXT_TO_IMAGE);
+    onCreate(docSettings);
   };
   
-  const handleSetPreset = (preset: Partial<CustomPreset> & { w: number, h: number, name: string }) => {
+  const handleSetPreset = (preset: Preset) => {
     setDocSettings({
         name: preset.name,
         width: preset.w,
@@ -120,29 +102,23 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose, setActiveToo
         units: preset.units ?? 'Pixels',
         background: preset.bg ?? 'White',
         customBgColor: preset.bgColor ?? '#FFFFFF',
-        preset: preset.name,
     });
     setActiveView('customDoc');
   };
 
   if (!isOpen) return null;
 
-  const NavItem: React.FC<{ label: string; view: ModalView; icon: React.ReactNode }> = ({ label, view, icon }) => (
-    <button
-      onClick={() => setActiveView(view)}
-      className={`flex items-center w-full space-x-3 p-3 rounded-lg text-left transition-colors ${activeView === view ? 'bg-gray-600' : 'hover:bg-gray-700/50'}`}
-    >
-      <div className="text-gray-400">{icon}</div>
-      <span className="font-medium text-gray-200">{label}</span>
-    </button>
-  );
-
   const renderContent = () => {
     switch (activeView) {
       case 'quickStart':
         return <QuickStartContent onUpload={handleImageUpload} onToolSelect={handleToolSelect} />;
       case 'blankDoc':
-        return <BlankDocumentContent onPresetSelect={handleSetPreset} customPresets={customPresets} onDeletePreset={handleDeletePreset} />;
+        return <BlankDocumentContent 
+                    onPresetSelect={handleSetPreset} 
+                    customPresets={customPresets} 
+                    onDeletePreset={handleDeletePreset}
+                    onRenamePreset={handleRenamePreset}
+                />;
       case 'customDoc':
         return (
           <CustomDocumentContent
@@ -164,20 +140,7 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose, setActiveToo
           <Icon type="close" />
         </button>
         
-        <aside className="w-1/4 min-w-[250px] bg-[#252525] p-4 space-y-4 border-r border-black/20">
-          <div className="relative mb-4">
-            <Icon type="search" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-            <input type="text" placeholder="Search" className="w-full bg-gray-800/50 border border-gray-600 rounded-md pl-10 pr-4 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
-          </div>
-          <div>
-            <h3 className="px-3 py-2 text-xs font-bold text-gray-500 uppercase">Quickstart</h3>
-            <div className="space-y-1 mt-1">
-              <NavItem label="Quick start" view="quickStart" icon={<Icon type="sparkle" />} />
-              <NavItem label="Blank document" view="blankDoc" icon={<Icon type="document" />} />
-              <NavItem label="Custom size" view="customDoc" icon={<Icon type="crop" />} />
-            </div>
-          </div>
-        </aside>
+        <CreateModalNav activeView={activeView} setActiveView={setActiveView} />
 
         <main className="flex-1 p-8 overflow-y-auto">
           {renderContent()}
@@ -185,34 +148,6 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose, setActiveToo
       </div>
     </div>
   );
-};
-
-
-const QuickStartContent: React.FC<{onUpload: (file: File) => void, onToolSelect: (tool: Tool) => void}> = ({ onUpload, onToolSelect }) => {
-    const aiTools = [
-        { label: 'Generate image', tool: Tool.TEXT_TO_IMAGE, description: 'Generate images from a detailed text description.'},
-        { label: 'Generative fill', tool: Tool.GENERATIVE_FILL, description: 'Add or remove objects with a text prompt.'},
-        { label: 'Remove Background', tool: Tool.REMOVE_BACKGROUND, description: 'Automatically remove the background from an image.'},
-    ];
-    return (
-        <div className="space-y-8">
-            <h2 id="create-modal-title" className="text-2xl font-semibold text-gray-100">Quick start</h2>
-            <div className="bg-gray-800/30 rounded-lg p-2">
-                <ImageUpload onUpload={onUpload} title="Upload a file to start editing" />
-            </div>
-            <div>
-                <h3 className="text-lg font-semibold text-gray-300 mb-4">Or start with a quick tool</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {aiTools.map(item => (
-                         <button key={item.label} onClick={() => onToolSelect(item.tool)} className="bg-gray-700/50 hover:bg-gray-600/50 p-4 rounded-lg text-left transition-colors">
-                            <h4 className="font-semibold text-gray-200">{item.label}</h4>
-                            <p className="text-sm text-gray-400 mt-1">{item.description}</p>
-                        </button>
-                    ))}
-                </div>
-            </div>
-        </div>
-    )
 };
 
 const TabButton: React.FC<{ label: string; isActive: boolean; onClick: () => void; }> = ({ label, isActive, onClick }) => (
@@ -226,46 +161,91 @@ const TabButton: React.FC<{ label: string; isActive: boolean; onClick: () => voi
     </button>
 );
 
+const PresetGrid: React.FC<{
+    presets: Preset[];
+    onPresetSelect: (preset: any) => void;
+}> = ({ presets, onPresetSelect }) => (
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        {presets.map(p => (
+            <button key={p.name} onClick={() => onPresetSelect(p)} className="aspect-[4/3] bg-gray-800/50 border-2 border-gray-700 hover:border-blue-500 rounded-lg flex flex-col items-center justify-center p-4 transition-colors text-center">
+                <Icon type="document" className="w-10 h-10 text-gray-500 mb-2"/>
+                <p className="font-semibold text-gray-200 w-full truncate">{p.name}</p>
+                <p className="text-sm text-gray-400">{p.w} x {p.h} px</p>
+            </button>
+        ))}
+    </div>
+);
+
 const BlankDocumentContent: React.FC<{
   onPresetSelect: (preset: any) => void;
   customPresets: CustomPreset[];
   onDeletePreset: (name: string) => void;
-}> = ({ onPresetSelect, customPresets, onDeletePreset }) => {
-    const [activeTab, setActiveTab] = useState<'recent' | 'saved'>('recent');
+  onRenamePreset: (oldName: string, newName: string) => boolean;
+}> = ({ onPresetSelect, customPresets, onDeletePreset, onRenamePreset }) => {
+    type PresetTab = 'most used' | 'saved' | 'photo' | 'social media' | 'film & video';
+    const [activeTab, setActiveTab] = useState<PresetTab>('most used');
     const [deletingPresetName, setDeletingPresetName] = useState<string | null>(null);
+    const [renamingPresetName, setRenamingPresetName] = useState<string | null>(null);
+    const [editedPresetName, setEditedPresetName] = useState('');
 
     const handleDeleteConfirm = (name: string) => {
         onDeletePreset(name);
         setDeletingPresetName(null);
     };
-
-    const handleDeleteCancel = () => {
-        setDeletingPresetName(null);
+    
+    const handleRenameStart = (preset: CustomPreset) => {
+        setRenamingPresetName(preset.name);
+        setEditedPresetName(preset.name);
+        setDeletingPresetName(null); 
     };
 
-    const tabs = ['Recent', 'Saved', 'Photo', 'Print', 'Art & Illustration', 'Web', 'Mobile', 'Film & Video'];
+    const handleRenameCancel = () => {
+        setRenamingPresetName(null);
+        setEditedPresetName('');
+    };
+
+    const handleRenameConfirm = () => {
+        if (renamingPresetName) {
+            const success = onRenamePreset(renamingPresetName, editedPresetName);
+            if (success) {
+                handleRenameCancel();
+            }
+        }
+    };
+
+    const tabConfig: {label: string, id: PresetTab}[] = [
+      { label: 'Most Used', id: 'most used' },
+      { label: 'Saved', id: 'saved' },
+      { label: 'Photo', id: 'photo' },
+      { label: 'Social Media', id: 'social media' },
+      { label: 'Film & Video', id: 'film & video' },
+    ];
+    
+    const presetData: Record<string, Preset[]> = {
+        'most used': mostUsedPresets,
+        'photo': photoPresets,
+        'social media': socialMediaPresets,
+        'film & video': filmAndVideoPresets,
+    };
 
     return (
         <div>
             <h2 id="create-modal-title" className="text-2xl font-semibold text-gray-100 mb-4">Create a blank document</h2>
             <div className="flex border-b border-gray-700 mb-6">
-                <TabButton label="Recent" isActive={activeTab === 'recent'} onClick={() => setActiveTab('recent')} />
-                <TabButton label="Saved" isActive={activeTab === 'saved'} onClick={() => setActiveTab('saved')} />
-                {tabs.slice(2).map(tab => (
-                    <TabButton key={tab} label={tab} isActive={false} onClick={() => alert(`${tab} presets coming soon!`)} />
+                {tabConfig.map(tab => (
+                    <TabButton 
+                        key={tab.id} 
+                        label={tab.label} 
+                        isActive={activeTab === tab.id} 
+                        onClick={() => setActiveTab(tab.id)} 
+                    />
                 ))}
             </div>
-            {activeTab === 'recent' && (
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                    {defaultPresets.map(p => (
-                        <button key={p.name} onClick={() => onPresetSelect(p)} className="aspect-[4/3] bg-gray-800/50 border-2 border-gray-700 hover:border-blue-500 rounded-lg flex flex-col items-center justify-center p-4 transition-colors">
-                            <Icon type="document" className="w-10 h-10 text-gray-500 mb-2"/>
-                            <p className="font-semibold text-gray-200">{p.name}</p>
-                            <p className="text-sm text-gray-400">{p.w} x {p.h} px</p>
-                        </button>
-                    ))}
-                </div>
+
+            {activeTab !== 'saved' && presetData[activeTab] && (
+                <PresetGrid presets={presetData[activeTab]} onPresetSelect={onPresetSelect} />
             )}
+
             {activeTab === 'saved' && (
                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                     {customPresets.length === 0 ? (
@@ -277,28 +257,61 @@ const BlankDocumentContent: React.FC<{
                     ) : (
                         customPresets.map(p => (
                              <div key={p.name} className="group relative aspect-[4/3] bg-gray-800/50 rounded-lg">
-                                <button onClick={() => onPresetSelect(p)} className="w-full h-full border-2 border-gray-700 hover:border-blue-500 rounded-lg flex flex-col items-center justify-center p-4 transition-colors text-center">
-                                    <Icon type="document" className="w-10 h-10 text-gray-500 mb-2"/>
-                                    <p className="font-semibold text-gray-200 truncate w-full">{p.name}</p>
-                                    <p className="text-sm text-gray-400">{p.w} x {p.h} {p.units}</p>
-                                </button>
-                                <button 
-                                    onClick={(e) => { e.stopPropagation(); setDeletingPresetName(p.name); }} 
-                                    className="absolute top-2 right-2 p-1 bg-gray-900/50 rounded-full text-gray-400 hover:text-white hover:bg-red-500/50 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-0"
-                                    aria-label={`Delete preset ${p.name}`}
-                                    title={`Delete preset ${p.name}`}
-                                    disabled={!!deletingPresetName}
-                                >
-                                    <Icon type="trash" />
-                                </button>
-                                {deletingPresetName === p.name && (
+                                {renamingPresetName === p.name ? (
                                     <div className="absolute inset-0 bg-gray-900/90 backdrop-blur-sm rounded-lg flex flex-col items-center justify-center p-4 space-y-3 transition-opacity">
-                                        <p className="font-semibold text-white text-center">Delete preset?</p>
+                                        <h4 className="font-semibold text-white text-center">Rename Preset</h4>
+                                        <Input 
+                                            type="text" 
+                                            value={editedPresetName} 
+                                            onChange={(e) => setEditedPresetName(e.target.value)} 
+                                            autoFocus
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') handleRenameConfirm();
+                                                if (e.key === 'Escape') handleRenameCancel();
+                                            }}
+                                        />
                                         <div className="flex space-x-2">
-                                            <button onClick={handleDeleteCancel} className="px-3 py-1 text-sm bg-gray-600 text-gray-100 hover:bg-gray-500 rounded font-medium">Cancel</button>
-                                            <button onClick={() => handleDeleteConfirm(p.name)} className="px-3 py-1 text-sm bg-red-600 text-white hover:bg-red-500 rounded font-medium">Delete</button>
+                                            <button onClick={handleRenameCancel} className="px-3 py-1 text-sm bg-gray-600 text-gray-100 hover:bg-gray-500 rounded font-medium">Cancel</button>
+                                            <button onClick={handleRenameConfirm} className="px-3 py-1 text-sm bg-blue-600 text-white hover:bg-blue-500 rounded font-medium">Save</button>
                                         </div>
                                     </div>
+                                ) : (
+                                <>
+                                    <button onClick={() => onPresetSelect(p)} className="w-full h-full border-2 border-gray-700 hover:border-blue-500 rounded-lg flex flex-col items-center justify-center p-4 transition-colors text-center">
+                                        <Icon type="document" className="w-10 h-10 text-gray-500 mb-2"/>
+                                        <p className="font-semibold text-gray-200 truncate w-full">{p.name}</p>
+                                        <p className="text-sm text-gray-400">{p.w} x {p.h} {p.units}</p>
+                                    </button>
+                                    <div className="absolute top-2 right-2 flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button 
+                                            onClick={(e) => { e.stopPropagation(); handleRenameStart(p); }} 
+                                            className="p-1.5 bg-gray-900/50 rounded-full text-gray-400 hover:text-white hover:bg-blue-500/50 disabled:opacity-50"
+                                            aria-label={`Rename preset ${p.name}`}
+                                            title={`Rename preset ${p.name}`}
+                                            disabled={!!deletingPresetName || !!renamingPresetName}
+                                        >
+                                            <Icon type="edit" />
+                                        </button>
+                                        <button 
+                                            onClick={(e) => { e.stopPropagation(); setDeletingPresetName(p.name); }} 
+                                            className="p-1.5 bg-gray-900/50 rounded-full text-gray-400 hover:text-white hover:bg-red-500/50 disabled:opacity-50"
+                                            aria-label={`Delete preset ${p.name}`}
+                                            title={`Delete preset ${p.name}`}
+                                            disabled={!!deletingPresetName || !!renamingPresetName}
+                                        >
+                                            <Icon type="trash" />
+                                        </button>
+                                    </div>
+                                    {deletingPresetName === p.name && (
+                                        <div className="absolute inset-0 bg-gray-900/90 backdrop-blur-sm rounded-lg flex flex-col items-center justify-center p-4 space-y-3 transition-opacity">
+                                            <p className="font-semibold text-white text-center">Delete preset?</p>
+                                            <div className="flex space-x-2">
+                                                <button onClick={() => setDeletingPresetName(null)} className="px-3 py-1 text-sm bg-gray-600 text-gray-100 hover:bg-gray-500 rounded font-medium">Cancel</button>
+                                                <button onClick={() => handleDeleteConfirm(p.name)} className="px-3 py-1 text-sm bg-red-600 text-white hover:bg-red-500 rounded font-medium">Delete</button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
                                 )}
                             </div>
                         ))
@@ -309,29 +322,27 @@ const BlankDocumentContent: React.FC<{
     )
 };
 
-const CustomDocumentContent: React.FC<{ settings: any, setSettings: any, onCreate: () => void, onSavePreset: (name: string) => void }> = ({ settings, setSettings, onCreate, onSavePreset }) => {
-  const { name, width, height, units, resolution, resolutionUnit, background, customBgColor, preset } = settings;
+const CustomDocumentContent: React.FC<{
+  settings: DocumentSettings,
+  setSettings: React.Dispatch<React.SetStateAction<DocumentSettings>>,
+  onCreate: () => void,
+  onSavePreset: (name: string) => boolean
+}> = ({ settings, setSettings, onCreate, onSavePreset }) => {
+  const { name, width, height, units, resolution, background, customBgColor } = settings;
   const [isAspectRatioLocked, setIsAspectRatioLocked] = useState(false);
-  const aspectRatioRef = useRef(width / height);
+  const aspectRatioRef = useRef(width > 0 && height > 0 ? width / height : 1);
   const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
   const colorPickerRef = useRef<HTMLDivElement>(null);
+  const [isSavingPreset, setIsSavingPreset] = useState(false);
+  const [newPresetName, setNewPresetName] = useState(name);
 
-  const updateSetting = (key: string, value: any) => {
-    setSettings((prev: any) => {
-      const newSettings = { ...prev, [key]: value };
-      if (key !== 'preset' && prev.preset !== 'Custom') {
-        newSettings.preset = 'Custom';
-      }
-      return newSettings;
-    });
+  const updateSetting = (key: keyof DocumentSettings, value: any) => {
+    setSettings(prev => ({ ...prev, [key]: value }));
   };
   
   const handlePresetChange = (presetName: string) => {
-    if (presetName === 'Custom') {
-        updateSetting('preset', 'Custom');
-        return;
-    }
-    const selected = defaultPresets.find(p => p.name === presetName);
+    const allPresets = [defaultPreset, ...mostUsedPresets, ...photoPresets, ...socialMediaPresets, ...filmAndVideoPresets];
+    const selected = allPresets.find(p => p.name === presetName);
     if (selected) {
         setSettings({
             ...settings,
@@ -342,28 +353,33 @@ const CustomDocumentContent: React.FC<{ settings: any, setSettings: any, onCreat
             units: selected.units ?? 'Pixels',
             background: selected.bg ?? 'White',
             customBgColor: selected.bgColor ?? '#FFFFFF',
-            preset: selected.name,
         });
     }
   };
   
-  const presetOptions = [
-    { value: 'Custom', label: 'Custom' },
-    ...defaultPresets.map(p => ({ value: p.name, label: p.name })),
-  ];
-  const filteredPresetOptions = preset === 'Custom' 
-    ? presetOptions 
-    : presetOptions.filter(p => p.value !== 'Custom');
+  const allPresetsList = [defaultPreset, ...mostUsedPresets, ...photoPresets, ...socialMediaPresets, ...filmAndVideoPresets];
+  const uniquePresets = allPresetsList.filter((p, i, a) => a.findIndex(t => t.name === p.name) === i);
   
+  const presetOptions = uniquePresets.map(p => ({ value: p.name, label: p.name }));
+
   const unitOptions = ['Pixels', 'Inches', 'Centimeters', 'Millimeters', 'Points', 'Picas'].map(u => ({ value: u, label: u }));
   const resolutionUnitOptions = [{ value: 'ppi', label: 'Pixels/Inch' }, { value: 'ppcm', label: 'Pixels/cm' }];
   const backgroundOptions = ['White', 'Black', 'Transparent', 'Custom'].map(b => ({ value: b, label: b }));
 
   const handleInitiateSave = () => {
-    const presetName = prompt('Enter a name for your preset:', name);
-    if (presetName) {
-      onSavePreset(presetName);
+    setNewPresetName(name);
+    setIsSavingPreset(true);
+  };
+
+  const handleConfirmSavePreset = () => {
+    const success = onSavePreset(newPresetName);
+    if (success) {
+      setIsSavingPreset(false);
     }
+  };
+
+  const handleCancelSavePreset = () => {
+    setIsSavingPreset(false);
   };
 
   const toggleLock = () => {
@@ -378,20 +394,20 @@ const CustomDocumentContent: React.FC<{ settings: any, setSettings: any, onCreat
   const handleWidthChange = (newWidthValue: string) => {
     const newWidth = parseInt(newWidthValue, 10) || 0;
     updateSetting('width', newWidth);
-    if (isAspectRatioLocked && aspectRatioRef.current !== 0) {
+    if (isAspectRatioLocked && aspectRatioRef.current && newWidth > 0) {
       const newHeight = Math.round(newWidth / aspectRatioRef.current);
-      if (settings.height !== newHeight) {
-          updateSetting('height', newHeight);
+      if (newHeight > 0) {
+        updateSetting('height', newHeight);
       }
     }
   };
   const handleHeightChange = (newHeightValue: string) => {
     const newHeight = parseInt(newHeightValue, 10) || 0;
     updateSetting('height', newHeight);
-    if (isAspectRatioLocked) {
+    if (isAspectRatioLocked && aspectRatioRef.current && newHeight > 0) {
       const newWidth = Math.round(newHeight * aspectRatioRef.current);
-      if (settings.width !== newWidth) {
-          updateSetting('width', newWidth);
+      if (newWidth > 0) {
+        updateSetting('width', newWidth);
       }
     }
   };
@@ -402,6 +418,9 @@ const CustomDocumentContent: React.FC<{ settings: any, setSettings: any, onCreat
           const oldWidth = width;
           updateSetting('width', height);
           updateSetting('height', oldWidth);
+          if (isAspectRatioLocked) {
+            aspectRatioRef.current = height / oldWidth;
+          }
       }
   };
 
@@ -424,17 +443,31 @@ const CustomDocumentContent: React.FC<{ settings: any, setSettings: any, onCreat
         <div className="space-y-5 max-w-lg">
           <div>
             <label htmlFor="docName" className="block text-sm font-medium text-gray-400 mb-1">Document name <span className="text-red-400">*</span></label>
-            <div className="relative">
-              <Input id="docName" value={name} onChange={e => updateSetting('name', e.target.value)} />
-               <div className="absolute right-1 top-1/2 -translate-y-1/2">
-                  <button onClick={handleInitiateSave} title="Save Preset" className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-600 rounded-md transition-colors" aria-label="Save preset">
-                      <Icon type="download" />
-                  </button>
+            {isSavingPreset ? (
+              <div className="flex items-center space-x-2">
+                <Input
+                  id="presetName"
+                  value={newPresetName}
+                  onChange={e => setNewPresetName(e.target.value)}
+                  autoFocus
+                  onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter') handleConfirmSavePreset(); if (e.key === 'Escape') handleCancelSavePreset(); }}
+                />
+                <button onClick={handleConfirmSavePreset} className="px-4 py-2 text-sm bg-blue-600 text-white hover:bg-blue-500 rounded-md font-medium whitespace-nowrap">Save Preset</button>
+                <button onClick={handleCancelSavePreset} className="px-4 py-2 text-sm bg-gray-600 text-gray-100 hover:bg-gray-500 rounded-md font-medium">Cancel</button>
               </div>
-            </div>
+            ) : (
+              <div className="relative">
+                <Input id="docName" value={name} onChange={e => updateSetting('name', e.target.value)} />
+                 <div className="absolute right-1 top-1/2 -translate-y-1/2">
+                    <button onClick={handleInitiateSave} title="Save Preset" className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-600 rounded-md transition-colors" aria-label="Save preset">
+                        <Icon type="save" />
+                    </button>
+                </div>
+              </div>
+            )}
           </div>
           
-          <Select label="Preset" options={filteredPresetOptions} value={preset} onChange={handlePresetChange} />
+          <Select label="Preset" options={presetOptions} value={settings.name} onChange={handlePresetChange} />
   
           <div className="grid grid-cols-2 gap-x-6 items-start">
             {/* Left Column for Width/Height/Lock */}
@@ -465,7 +498,7 @@ const CustomDocumentContent: React.FC<{ settings: any, setSettings: any, onCreat
           
           <div className="grid grid-cols-2 gap-x-6">
               <Input label="Resolution" type="number" value={resolution} onChange={e => updateSetting('resolution', parseInt(e.target.value))} />
-              <Select label="&nbsp;" options={resolutionUnitOptions} value={resolutionUnit} onChange={val => updateSetting('resolutionUnit', val)} />
+              <Select label="&nbsp;" options={resolutionUnitOptions} value={settings.resolutionUnit} onChange={val => updateSetting('resolutionUnit', val)} />
           </div>
   
           <div className="flex items-end space-x-2">
@@ -502,18 +535,5 @@ const CustomDocumentContent: React.FC<{ settings: any, setSettings: any, onCreat
     </div>
   );
 };
-
-const Input: React.FC<{label?: string, value: any, onChange: any, type?: string, id?: string, autoFocus?: boolean, onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void}> = ({ label, ...props }) => (
-    <div className="w-full">
-        {label && <label htmlFor={props.id} className="block text-sm font-medium text-gray-400 mb-1">{label}</label>}
-        <div className="relative">
-            <input 
-                {...props}
-                className="w-full p-2 bg-[#1E1E1E] border border-gray-700 rounded-md focus:bg-gray-900/0 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-            />
-        </div>
-    </div>
-);
-
 
 export default CreateModal;

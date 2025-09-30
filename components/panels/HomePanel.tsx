@@ -1,10 +1,12 @@
 
-import React from 'react';
-import { Tool } from '../../types';
+import React, { useState, useEffect } from 'react';
+import { Tool, RecentProject } from '../../types';
 import Icon from '../ui/Icon';
+import { getRecentProjects } from '../../utils/recentProjects';
 
 interface HomePanelProps {
   setActiveTool: (tool: Tool) => void;
+  onOpenProject: (project: RecentProject) => void;
 }
 
 const QuickEditCard: React.FC<{ label: string; icon: React.ReactNode; onClick: () => void; }> = ({ label, icon, onClick }) => (
@@ -24,19 +26,40 @@ const EffectCard: React.FC<{ label: string; imageUrl: string }> = ({ label, imag
   </div>
 );
 
-const RecentFileCard: React.FC<{ title: string; type: string; time: string; imageUrl: string }> = ({ title, type, time, imageUrl }) => (
-  <div className="bg-gray-800 rounded-lg overflow-hidden group cursor-pointer">
-    <div className="w-full h-32 bg-gray-700 overflow-hidden">
-      <img src={imageUrl} alt={title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" />
+const formatRelativeTime = (timestamp: number): string => {
+    const now = new Date();
+    const past = new Date(timestamp);
+    const diffInSeconds = Math.floor((now.getTime() - past.getTime()) / 1000);
+    const days = Math.floor(diffInSeconds / (60 * 60 * 24));
+    if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`;
+    return 'Today';
+};
+
+const RecentFileCard: React.FC<{ project: RecentProject; onOpen: () => void; }> = ({ project, onOpen }) => (
+  <button onClick={onOpen} className="bg-gray-800 rounded-lg overflow-hidden group cursor-pointer text-left w-full transition-transform duration-200 hover:-translate-y-1">
+    <div className="w-full h-32 bg-gray-700 overflow-hidden flex items-center justify-center" style={{backgroundColor: project.background === 'Custom' ? project.customBgColor : project.background.toLowerCase()}}>
+       {project.thumbnail ? (
+        <img src={project.thumbnail} alt={project.name} className="w-full h-full object-cover" />
+      ) : (
+        <Icon type="document" className="w-12 h-12 text-gray-500" />
+      )}
     </div>
     <div className="p-3">
-      <h4 className="font-semibold text-sm truncate text-gray-200">{title}</h4>
-      <p className="text-xs text-gray-500">{type} - {time}</p>
+      <h4 className="font-semibold text-sm truncate text-gray-200">{project.name}</h4>
+      <p className="text-xs text-gray-500">{project.width}x{project.height} - {formatRelativeTime(project.lastModified)}</p>
     </div>
-  </div>
+  </button>
 );
 
-const HomePanel: React.FC<HomePanelProps> = ({ setActiveTool }) => {
+const HomePanel: React.FC<HomePanelProps> = ({ setActiveTool, onOpenProject }) => {
+  const [recentFiles, setRecentFiles] = useState<RecentProject[]>([]);
+  
+  useEffect(() => {
+    // Get all projects and slice the most recent 6 for the home screen
+    const allProjects = getRecentProjects();
+    setRecentFiles(allProjects.slice(0, 6));
+  }, []);
+
   const quickEdits = [
     { label: 'Generate an image', icon: <Icon type="text" />, tool: Tool.TEXT_TO_IMAGE },
     { label: 'Remove background', icon: <Icon type="cut" />, tool: Tool.REMOVE_BACKGROUND },
@@ -54,12 +77,6 @@ const HomePanel: React.FC<HomePanelProps> = ({ setActiveTool }) => {
     { label: 'Motion blur', imageUrl: 'https://images.unsplash.com/photo-1583067139174-785952f1362a?ixlib=rb-4.0.3&q=80&fm=jpg&crop=entropy&cs=tinysrgb&w=400&fit=max' },
     { label: 'Halftone', imageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&q=80&fm=jpg&crop=entropy&cs=tinysrgb&w=400&fit=max' },
   ];
-  
-  const recentFiles = [
-      {title: 'modern youtube studio...', type: 'Image', time: '1 month ago', imageUrl: 'https://images.unsplash.com/photo-1620173834206-a11b84218864?ixlib=rb-4.0.3&q=80&fm=jpg&crop=entropy&cs=tinysrgb&w=400&fit=max' },
-      {title: 'Untitled-1', type: 'PDDC', time: '1 day ago', imageUrl: 'https://images.unsplash.com/photo-1618355752181-1283d6723c34?ixlib=rb-4.0.3&q=80&fm=jpg&crop=entropy&cs=tinysrgb&w=400&fit=max' },
-      {title: 'Remove background proj...', type: 'Filer', time: '7 months ago', imageUrl: 'https://plus.unsplash.com/premium_photo-1661699927429-6563a9533c30?ixlib=rb-4.0.3&q=80&fm=jpg&crop=entropy&cs=tinysrgb&w=400&fit=max'},
-  ]
 
   return (
     <div className="space-y-10">
@@ -93,9 +110,15 @@ const HomePanel: React.FC<HomePanelProps> = ({ setActiveTool }) => {
             <h2 className="text-xl font-semibold">Recent</h2>
             <button onClick={() => setActiveTool(Tool.FILES)} className="text-sm font-semibold text-blue-400 hover:text-blue-300 transition-colors">View all files</button>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-            {recentFiles.map(file => <RecentFileCard key={file.title} {...file} />)}
-        </div>
+        {recentFiles.length > 0 ? (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+              {recentFiles.map(project => <RecentFileCard key={project.id} project={project} onOpen={() => onOpenProject(project)} />)}
+          </div>
+        ) : (
+          <div className="text-center py-10 text-gray-500 bg-gray-800/50 rounded-lg">
+            <p>Your recent projects will appear here.</p>
+          </div>
+        )}
       </section>
     </div>
   );
