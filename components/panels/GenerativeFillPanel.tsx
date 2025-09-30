@@ -53,7 +53,6 @@ const GenerativeFillPanel: React.FC = () => {
     setError(null);
     setResultImage(null);
     
-    // 1. Create a canvas for the final composite image
     const compositeCanvas = document.createElement('canvas');
     compositeCanvas.width = CANVAS_SIZE;
     compositeCanvas.height = CANVAS_SIZE;
@@ -63,7 +62,6 @@ const GenerativeFillPanel: React.FC = () => {
         return;
     };
 
-    // 2. Draw the original image onto it, maintaining aspect ratio
     const img = new Image();
     img.src = imageBase64;
     await new Promise(resolve => img.onload = resolve);
@@ -80,7 +78,6 @@ const GenerativeFillPanel: React.FC = () => {
     const yOffset = (CANVAS_SIZE - newHeight) / 2;
     compositeCtx.drawImage(img, xOffset, yOffset, newWidth, newHeight);
 
-    // 3. Process the mask to be solid pink
     const maskCtx = maskCanvas.getContext('2d');
     if (!maskCtx) {
         setIsLoading(false);
@@ -89,16 +86,14 @@ const GenerativeFillPanel: React.FC = () => {
     const imageData = maskCtx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE);
     const data = imageData.data;
     for (let i = 0; i < data.length; i += 4) {
-        // if pixel is not transparent, it's part of the mask
         if (data[i + 3] > 0) {
-            data[i] = 255;     // R
-            data[i + 1] = 0;   // G
-            data[i + 2] = 255; // B
-            data[i + 3] = 255; // A (solid)
+            data[i] = 255;
+            data[i + 1] = 0;
+            data[i + 2] = 255;
+            data[i + 3] = 255;
         }
     }
     
-    // 4. Draw the solidified mask on top of the original image
     const solidMaskCanvas = document.createElement('canvas');
     solidMaskCanvas.width = CANVAS_SIZE;
     solidMaskCanvas.height = CANVAS_SIZE;
@@ -147,52 +142,57 @@ const GenerativeFillPanel: React.FC = () => {
     setSuggestions([]);
   };
 
+  if (!imageBase64) {
+    return (
+      <div className="max-w-2xl mx-auto flex flex-col items-center text-center">
+        <h2 className="text-3xl font-bold text-indigo-400 mb-2">Generative Fill</h2>
+        <p className="text-gray-400 mb-6">Upload an image, mask an area you want to change, and describe what you want to see.</p>
+        <ImageUpload onUpload={handleImageUpload} title="Upload an image to start" />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 flex-1">
         <div className="flex flex-col space-y-4 items-center">
             <h2 className="text-2xl font-bold text-indigo-400 self-start">Mask Your Image</h2>
-            {!imageBase64 ? (
-              <ImageUpload onUpload={handleImageUpload} title="Upload an image to start" />
-            ) : (
-              <>
-                <Canvas ref={canvasRef} width={CANVAS_SIZE} height={CANVAS_SIZE} backgroundImage={imageBase64} brushColor={MASK_COLOR} brushSize={brushSize} brushOpacity={brushOpacity} brushShape={brushShape} clearToken={clearToken} onHistoryChange={setHistoryState} />
-                <div className="flex flex-col space-y-3 p-3 bg-gray-800 rounded-lg w-full max-w-[512px]">
-                   <div className="flex items-center space-x-3">
-                      <label htmlFor="brushSizeFill" className="text-sm font-medium text-gray-300">Size</label>
-                      <input type="range" id="brushSizeFill" min="5" max="100" value={brushSize} onChange={e => setBrushSize(parseInt(e.target.value))} className="w-full accent-indigo-500" />
-                   </div>
-                   <div className="flex items-center space-x-3">
-                      <label htmlFor="brushOpacityFill" className="text-sm font-medium text-gray-300">Opacity</label>
+            <Canvas ref={canvasRef} width={CANVAS_SIZE} height={CANVAS_SIZE} backgroundImage={imageBase64} brushColor={MASK_COLOR} brushSize={brushSize} brushOpacity={brushOpacity} brushShape={brushShape} clearToken={clearToken} onHistoryChange={setHistoryState} />
+            <div className="p-4 bg-gray-800/50 border border-gray-700/50 rounded-lg w-full max-w-[512px] space-y-4">
+                <div className="grid grid-cols-[auto,1fr] items-center gap-x-4 gap-y-3">
+                   <label htmlFor="brushSizeFill" className="text-sm font-medium text-gray-300">Size</label>
+                   <input type="range" id="brushSizeFill" min="5" max="100" value={brushSize} onChange={e => setBrushSize(parseInt(e.target.value))} className="w-full accent-indigo-500" />
+                   
+                   <label htmlFor="brushOpacityFill" className="text-sm font-medium text-gray-300">Opacity</label>
+                   <div className="flex items-center gap-3">
                       <input type="range" id="brushOpacityFill" min="0.05" max="1" step="0.05" value={brushOpacity} onChange={e => setBrushOpacity(parseFloat(e.target.value))} className="w-full accent-indigo-500" />
                       <span className="text-xs w-10 text-center text-gray-400">{(brushOpacity * 100).toFixed(0)}%</span>
                    </div>
-                   <div className="flex items-center justify-between">
-                       <div className="flex items-center space-x-3">
-                           <label className="text-sm font-medium text-gray-300">Shape</label>
-                           <div className="flex items-center space-x-2">
-                               <button onClick={() => setBrushShape('round')} className={`p-1.5 rounded-md transition-colors ${brushShape === 'round' ? 'bg-indigo-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-300'}`} aria-label="Round brush tip"><Icon type="brush-round" /></button>
-                               <button onClick={() => setBrushShape('square')} className={`p-1.5 rounded-md transition-colors ${brushShape === 'square' ? 'bg-indigo-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-300'}`} aria-label="Square brush tip"><Icon type="brush-square" /></button>
-                           </div>
-                       </div>
-                       <div className="flex items-center space-x-2">
-                          <Button onClick={() => canvasRef.current?.undo()} disabled={!historyState.canUndo} variant="secondary" icon={<Icon type="undo" />} aria-label="Undo" />
-                          <Button onClick={() => canvasRef.current?.redo()} disabled={!historyState.canRedo} variant="secondary" icon={<Icon type="redo" />} aria-label="Redo" />
-                          <Button onClick={handleClearMask} variant="secondary" icon={<Icon type="clear" />}>Clear Mask</Button>
-                       </div>
+
+                   <label className="text-sm font-medium text-gray-300">Shape</label>
+                   <div className="flex items-center space-x-2">
+                       <button onClick={() => setBrushShape('round')} className={`p-1.5 rounded-md transition-colors ${brushShape === 'round' ? 'bg-indigo-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-300'}`} aria-label="Round brush tip"><Icon type="brush-round" /></button>
+                       <button onClick={() => setBrushShape('square')} className={`p-1.5 rounded-md transition-colors ${brushShape === 'square' ? 'bg-indigo-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-300'}`} aria-label="Square brush tip"><Icon type="brush-square" /></button>
                    </div>
                 </div>
-              </>
-            )}
+                 <div className="flex items-center justify-between pt-2 border-t border-gray-700">
+                    <Button onClick={() => {setImageBase64(undefined); setUploadedImage(null);}} variant="secondary">Change Image</Button>
+                    <div className="flex items-center space-x-2">
+                      <Button onClick={() => canvasRef.current?.undo()} disabled={!historyState.canUndo} variant="secondary" icon={<Icon type="undo" />} aria-label="Undo" />
+                      <Button onClick={() => canvasRef.current?.redo()} disabled={!historyState.canRedo} variant="secondary" icon={<Icon type="redo" />} aria-label="Redo" />
+                      <Button onClick={handleClearMask} variant="secondary" icon={<Icon type="clear" />}>Clear Mask</Button>
+                    </div>
+                 </div>
+            </div>
         </div>
 
-        <div className="flex flex-col space-y-4">
+        <div className="flex flex-col space-y-6">
           <h2 className="text-2xl font-bold text-indigo-400">Describe the Fill</h2>
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="e.g., 'a field of sunflowers', 'a futuristic city skyline', 'two curious cats'"
-            className="w-full h-24 p-3 bg-gray-800 border border-gray-600 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+            className="w-full h-24 p-3 bg-gray-800 border border-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
             disabled={isLoading || !imageBase64}
           />
           <div className="flex flex-col space-y-2">
@@ -214,11 +214,11 @@ const GenerativeFillPanel: React.FC = () => {
               </div>
             )}
           </div>
-          <Button onClick={handleGenerate} isLoading={isLoading} disabled={!prompt || !imageBase64}>
+          <Button onClick={handleGenerate} isLoading={isLoading} disabled={!prompt || !imageBase64} className="w-full !py-3">
             Generate Fill
           </Button>
           {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
-          <div className="flex-1 flex items-center justify-center bg-gray-800 border-2 border-dashed border-gray-600 rounded-lg min-h-[300px] lg:min-h-[512px] relative">
+          <div className="flex-1 flex items-center justify-center bg-gray-800/50 border-2 border-dashed border-gray-700 rounded-lg w-full aspect-square relative">
              {isLoading && <Spinner size="lg" />}
              {!isLoading && resultImage && (
                 <>

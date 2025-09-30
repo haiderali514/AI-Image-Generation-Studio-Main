@@ -98,45 +98,41 @@ const DrawToImagePanel: React.FC = () => {
         <div className="flex flex-col space-y-4 items-center">
             <h2 className="text-2xl font-bold text-indigo-400 self-start">Sketch Your Idea</h2>
             <Canvas ref={canvasRef} width={CANVAS_SIZE} height={CANVAS_SIZE} brushColor={brushColor} brushSize={brushSize} brushOpacity={brushOpacity} brushShape={brushShape} clearToken={clearCanvasToken} onHistoryChange={setHistoryState}/>
-            <div className="flex flex-col space-y-3 p-3 bg-gray-800 rounded-lg w-full max-w-[512px]">
-                {/* Row 1: Color & Size */}
-                <div className="flex items-center space-x-3">
+            <div className="p-4 bg-gray-800/50 border border-gray-700/50 rounded-lg w-full max-w-[512px] space-y-4">
+                <div className="grid grid-cols-[auto,1fr] items-center gap-x-4 gap-y-3">
                     <label htmlFor="brushColor" className="text-sm font-medium text-gray-300">Color</label>
-                    <input type="color" id="brushColor" value={brushColor} onChange={e => setBrushColor(e.target.value)} className="w-8 h-8 p-0 border-none rounded cursor-pointer bg-gray-700"/>
-                    <label htmlFor="brushSize" className="text-sm font-medium text-gray-300 ml-2">Size</label>
+                    <input type="color" id="brushColor" value={brushColor} onChange={e => setBrushColor(e.target.value)} className="w-8 h-8 p-0 border-none rounded cursor-pointer bg-gray-700 justify-self-start"/>
+                    
+                    <label htmlFor="brushSize" className="text-sm font-medium text-gray-300">Size</label>
                     <input type="range" id="brushSize" min="1" max="50" value={brushSize} onChange={e => setBrushSize(parseInt(e.target.value))} className="w-full accent-indigo-500" />
-                </div>
-                {/* Row 2: Opacity */}
-                <div className="flex items-center space-x-3">
+                    
                     <label htmlFor="brushOpacity" className="text-sm font-medium text-gray-300">Opacity</label>
-                    <input type="range" id="brushOpacity" min="0.05" max="1" step="0.05" value={brushOpacity} onChange={e => setBrushOpacity(parseFloat(e.target.value))} className="w-full accent-indigo-500" />
-                    <span className="text-xs w-10 text-center text-gray-400">{(brushOpacity * 100).toFixed(0)}%</span>
-                </div>
-                {/* Row 3: Shape & Clear */}
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                        <label className="text-sm font-medium text-gray-300">Shape</label>
-                        <div className="flex items-center space-x-2">
-                            <button onClick={() => setBrushShape('round')} className={`p-1.5 rounded-md transition-colors ${brushShape === 'round' ? 'bg-indigo-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-300'}`} aria-label="Round brush tip"><Icon type="brush-round" /></button>
-                            <button onClick={() => setBrushShape('square')} className={`p-1.5 rounded-md transition-colors ${brushShape === 'square' ? 'bg-indigo-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-300'}`} aria-label="Square brush tip"><Icon type="brush-square" /></button>
-                        </div>
+                    <div className="flex items-center gap-3">
+                      <input type="range" id="brushOpacity" min="0.05" max="1" step="0.05" value={brushOpacity} onChange={e => setBrushOpacity(parseFloat(e.target.value))} className="w-full accent-indigo-500" />
+                      <span className="text-xs w-10 text-center text-gray-400">{(brushOpacity * 100).toFixed(0)}%</span>
                     </div>
+
+                    <label className="text-sm font-medium text-gray-300">Shape</label>
                     <div className="flex items-center space-x-2">
-                        <Button onClick={() => canvasRef.current?.undo()} disabled={!historyState.canUndo} variant="secondary" icon={<Icon type="undo" />} aria-label="Undo" />
-                        <Button onClick={() => canvasRef.current?.redo()} disabled={!historyState.canRedo} variant="secondary" icon={<Icon type="redo" />} aria-label="Redo" />
-                        <Button onClick={handleClearCanvas} variant="secondary" icon={<Icon type="clear" />}>Clear</Button>
+                        <button onClick={() => setBrushShape('round')} className={`p-1.5 rounded-md transition-colors ${brushShape === 'round' ? 'bg-indigo-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-300'}`} aria-label="Round brush tip"><Icon type="brush-round" /></button>
+                        <button onClick={() => setBrushShape('square')} className={`p-1.5 rounded-md transition-colors ${brushShape === 'square' ? 'bg-indigo-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-300'}`} aria-label="Square brush tip"><Icon type="brush-square" /></button>
                     </div>
+                </div>
+                <div className="flex items-center justify-end space-x-2 pt-2 border-t border-gray-700">
+                    <Button onClick={() => canvasRef.current?.undo()} disabled={!historyState.canUndo} variant="secondary" icon={<Icon type="undo" />} aria-label="Undo" />
+                    <Button onClick={() => canvasRef.current?.redo()} disabled={!historyState.canRedo} variant="secondary" icon={<Icon type="redo" />} aria-label="Redo" />
+                    <Button onClick={handleClearCanvas} variant="secondary" icon={<Icon type="clear" />}>Clear</Button>
                 </div>
             </div>
         </div>
 
-        <div className="flex flex-col space-y-4">
+        <div className="flex flex-col space-y-6">
           <h2 className="text-2xl font-bold text-indigo-400">Add a Prompt</h2>
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="Describe what the sketch should become, e.g., 'A photorealistic cat sitting on a windowsill'"
-            className="w-full h-24 p-3 bg-gray-800 border border-gray-600 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+            className="w-full h-24 p-3 bg-gray-800 border border-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
             disabled={isLoading}
           />
           <div className="flex flex-col space-y-2">
@@ -158,11 +154,11 @@ const DrawToImagePanel: React.FC = () => {
               </div>
             )}
           </div>
-          <Button onClick={handleGenerate} isLoading={isLoading} disabled={!prompt}>
+          <Button onClick={handleGenerate} isLoading={isLoading} disabled={!prompt} className="w-full !py-3">
             Generate from Sketch
           </Button>
           {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
-          <div className="flex-1 flex items-center justify-center bg-gray-800 border-2 border-dashed border-gray-600 rounded-lg min-h-[300px] lg:min-h-[512px] relative">
+          <div className="flex-1 flex items-center justify-center bg-gray-800/50 border-2 border-dashed border-gray-700 rounded-lg w-full aspect-square relative">
              {isLoading && <Spinner size="lg" />}
              {!isLoading && generatedImage && (
                 <>

@@ -99,14 +99,16 @@ const TextToImagePanel: React.FC = () => {
   return (
     <div className="flex flex-col h-full">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 flex-1">
-        <div className="flex flex-col space-y-4">
-          <h2 className="text-2xl font-bold text-indigo-400">Describe Your Vision</h2>
-          <p className="text-gray-400">Enter a detailed description of the image you want to create. Be as specific as you can for the best results.</p>
+        <div className="flex flex-col space-y-6">
+          <div>
+            <h2 className="text-2xl font-bold text-indigo-400">Describe Your Vision</h2>
+            <p className="text-gray-400 mt-1">Enter a detailed description of the image you want to create.</p>
+          </div>
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="e.g., A cinematic shot of a raccoon astronaut on a neon-lit alien planet, detailed, 8k"
-            className="w-full h-40 p-3 bg-gray-800 border border-gray-600 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+            className="w-full h-40 p-3 bg-gray-800 border border-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
             disabled={isLoading}
           />
           <div className="flex flex-col space-y-2">
@@ -128,58 +130,62 @@ const TextToImagePanel: React.FC = () => {
               </div>
             )}
           </div>
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-400">Aspect Ratio</label>
-            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-              {aspectRatioPresets.map((preset) => (
-                <button
-                  key={preset.name}
-                  onClick={() => handlePresetClick(preset)}
-                  className={`py-2 px-3 text-sm rounded-md transition-colors duration-200 text-center ${
-                    activePreset === preset.name
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  }`}
-                >
-                  <div className="font-semibold">{preset.label}</div>
-                  <div className="text-xs opacity-80">{preset.name}</div>
-                </button>
-              ))}
+
+          <div className="p-4 bg-gray-800/50 border border-gray-700/50 rounded-lg space-y-4">
+            <h3 className="font-semibold text-gray-300">Image Settings</h3>
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-400">Aspect Ratio</label>
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                {aspectRatioPresets.map((preset) => (
+                  <button
+                    key={preset.name}
+                    onClick={() => handlePresetClick(preset)}
+                    className={`py-2 px-3 text-sm rounded-md transition-colors duration-200 text-center ${
+                      activePreset === preset.name
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                  >
+                    <div className="font-semibold">{preset.label}</div>
+                    <div className="text-xs opacity-80">{preset.name}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4 pt-2">
+              <div>
+                <label htmlFor="width" className="block text-sm font-medium text-gray-400 mb-1">Width (px)</label>
+                <input
+                  id="width"
+                  type="number"
+                  value={width}
+                  onChange={(e) => handleWidthChange(parseInt(e.target.value, 10) || 0)}
+                  placeholder="e.g., 1024"
+                  className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+                  disabled={isLoading}
+                />
+              </div>
+              <div>
+                <label htmlFor="height" className="block text-sm font-medium text-gray-400 mb-1">Height (px)</label>
+                <input
+                  id="height"
+                  type="number"
+                  value={height}
+                  onChange={(e) => handleHeightChange(parseInt(e.target.value, 10) || 0)}
+                  placeholder="e.g., 1024"
+                  className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+                  disabled={isLoading}
+                />
+              </div>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="width" className="block text-sm font-medium text-gray-400 mb-1">Width (px)</label>
-              <input
-                id="width"
-                type="number"
-                value={width}
-                onChange={(e) => handleWidthChange(parseInt(e.target.value, 10) || 0)}
-                placeholder="e.g., 1024"
-                className="w-full p-2 bg-gray-800 border border-gray-600 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
-                disabled={isLoading}
-              />
-            </div>
-            <div>
-              <label htmlFor="height" className="block text-sm font-medium text-gray-400 mb-1">Height (px)</label>
-              <input
-                id="height"
-                type="number"
-                value={height}
-                onChange={(e) => handleHeightChange(parseInt(e.target.value, 10) || 0)}
-                placeholder="e.g., 1024"
-                className="w-full p-2 bg-gray-800 border border-gray-600 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
-                disabled={isLoading}
-              />
-            </div>
-          </div>
-          <Button onClick={handleGenerate} isLoading={isLoading} disabled={!prompt || !width || !height}>
+          <Button onClick={handleGenerate} isLoading={isLoading} disabled={!prompt || !width || !height} className="w-full !py-3">
             Generate Image
           </Button>
           {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
         </div>
         
-        <div className="flex items-center justify-center bg-gray-800 border-2 border-dashed border-gray-600 rounded-lg h-full min-h-[300px] lg:min-h-[512px] relative">
+        <div className="flex items-center justify-center bg-gray-800/50 border-2 border-dashed border-gray-700 rounded-lg h-full w-full aspect-square relative">
           {isLoading && <Spinner size="lg" />}
           {!isLoading && generatedImage && (
             <>
@@ -190,9 +196,10 @@ const TextToImagePanel: React.FC = () => {
             </>
           )}
           {!isLoading && !generatedImage && (
-            <div className="text-center text-gray-500">
-              <Icon type="logo" className="mx-auto w-16 h-16 opacity-20"/>
-              <p>Your generated image will appear here</p>
+            <div className="text-center text-gray-500 flex flex-col items-center">
+              <Icon type="logo" className="w-16 h-16 opacity-20 mb-2"/>
+              <p className="font-semibold">Your generated image will appear here</p>
+              <p className="text-sm">Let your creativity flow!</p>
             </div>
           )}
         </div>

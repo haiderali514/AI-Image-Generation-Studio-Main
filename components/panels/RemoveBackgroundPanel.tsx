@@ -38,56 +38,60 @@ const RemoveBackgroundPanel: React.FC = () => {
     }
   };
 
+  const handleDownload = () => {
+    if (!resultImage) return;
+    const link = document.createElement('a');
+    link.href = resultImage;
+    link.download = 'background-removed.png';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  if (!originalImageBase64) {
+    return (
+      <div className="max-w-2xl mx-auto flex flex-col items-center text-center">
+        <h2 className="text-3xl font-bold text-indigo-400 mb-2">Remove Background</h2>
+        <p className="text-gray-400 mb-6">Upload an image and the AI will automatically remove the background, leaving you with a clean, transparent result.</p>
+        <ImageUpload onUpload={handleImageUpload} title="PNG, JPG, WEBP accepted" />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-1">
-        {!originalImageBase64 && (
-          <div className="max-w-xl mx-auto">
-             <h2 className="text-2xl font-bold text-indigo-400 mb-4">Upload Image</h2>
-             <p className="text-gray-400 mb-6">Select an image to remove its background. The AI will identify the main subject and create a transparent background.</p>
-            <ImageUpload onUpload={handleImageUpload} title="PNG, JPG, WEBP accepted" />
+      <h2 className="text-3xl font-bold text-indigo-400 mb-6">Remove Background</h2>
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="flex flex-col items-center space-y-4">
+          <h3 className="text-xl font-semibold text-gray-300">Original Image</h3>
+          <div className="w-full aspect-square bg-gray-800/50 rounded-lg flex items-center justify-center p-2 border border-gray-700/50">
+            <img src={originalImageBase64} alt="Original" className="max-w-full max-h-full object-contain rounded-md" />
           </div>
-        )}
-        {originalImageBase64 && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div className="flex flex-col items-center space-y-4">
-              <h3 className="text-xl font-semibold">Original Image</h3>
-              <div className="w-full aspect-square bg-gray-800 rounded-lg flex items-center justify-center p-2">
-                <img src={originalImageBase64} alt="Original" className="max-w-full max-h-full object-contain rounded-md" />
-              </div>
-               <Button onClick={handleRemoveBackground} isLoading={isLoading}>
-                 Remove Background
-               </Button>
-               <Button onClick={() => setOriginalImageBase64(null)} variant="secondary" disabled={isLoading}>
-                 Upload Another Image
-               </Button>
-            </div>
-            <div className="flex flex-col items-center space-y-4">
-              <h3 className="text-xl font-semibold">Result</h3>
-              <div className="w-full aspect-square bg-gray-800 rounded-lg flex items-center justify-center p-2 border-2 border-dashed border-gray-600" style={{ backgroundImage: 'repeating-conic-gradient(#374151 0 25%, transparent 0 50%)', backgroundSize: '20px 20px'}}>
-                {isLoading && <Spinner size="lg" />}
-                {!isLoading && resultImage && (
-                  <img src={resultImage} alt="Background removed" className="max-w-full max-h-full object-contain" />
-                )}
-                {!isLoading && !resultImage && !error && (
-                    <p className="text-gray-500">Result will appear here</p>
-                )}
-                {error && <p className="text-red-400 text-sm p-4 text-center">{error}</p>}
-              </div>
-              <Button onClick={() => {
-                  if(!resultImage) return;
-                  const link = document.createElement('a');
-                  link.href = resultImage;
-                  link.download = 'background-removed.png';
-                  document.body.appendChild(link);
-                  link.click();
-                  document.body.removeChild(link);
-              }} disabled={!resultImage || isLoading} icon={<Icon type="download"/>}>
-                Save Image
-              </Button>
-            </div>
+           <div className="w-full flex flex-col space-y-2">
+            <Button onClick={handleRemoveBackground} isLoading={isLoading} className="!py-3">
+              Remove Background
+            </Button>
+            <Button onClick={() => setOriginalImageBase64(null)} variant="secondary" disabled={isLoading}>
+              Upload Another Image
+            </Button>
+           </div>
+        </div>
+        <div className="flex flex-col items-center space-y-4">
+          <h3 className="text-xl font-semibold text-gray-300">Result</h3>
+          <div className="w-full aspect-square bg-gray-800/50 rounded-lg flex items-center justify-center p-2 border-2 border-dashed border-gray-700" style={{ backgroundImage: 'repeating-conic-gradient(#374151 0 25%, transparent 0 50%)', backgroundSize: '20px 20px'}}>
+            {isLoading && <Spinner size="lg" />}
+            {!isLoading && resultImage && (
+              <img src={resultImage} alt="Background removed" className="max-w-full max-h-full object-contain" />
+            )}
+            {!isLoading && !resultImage && !error && (
+                <p className="text-gray-500 font-semibold">Result will appear here</p>
+            )}
+            {error && <p className="text-red-400 text-sm p-4 text-center">{error}</p>}
           </div>
-        )}
+          <Button onClick={handleDownload} disabled={!resultImage || isLoading} icon={<Icon type="download"/>} className="w-full">
+            Save Image
+          </Button>
+        </div>
       </div>
     </div>
   );

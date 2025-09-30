@@ -109,7 +109,10 @@ export const removeBackground = async (imageBase64: string, mimeType: string): P
   return editImage(imageBase64, mimeType, prompt);
 };
 
+// FIX: Add missing properties HOME and FILES to `suggestionPrompts` to satisfy the `Record<Tool, string>` type.
 const suggestionPrompts: Record<Tool, string> = {
+  [Tool.HOME]: "", // Not applicable
+  [Tool.FILES]: "", // Not applicable
   [Tool.TEXT_TO_IMAGE]: "You are a creative assistant for an AI image generation tool. Generate 5 diverse and inspiring text-to-image prompts. The prompts should be detailed and cover different styles like photorealism, fantasy, and abstract art. If the user has started typing, use it as inspiration.",
   [Tool.DRAW_TO_IMAGE]: "You are a creative assistant for an AI image generation tool. A user has provided a simple sketch. Generate 5 diverse prompts that could transform the sketch into a masterpiece, suggesting different art styles and interpretations (e.g., 'a detailed oil painting of...', 'a charcoal sketch of...', 'a vibrant watercolor of...').",
   [Tool.GENERATIVE_FILL]: "You are a creative assistant for an AI image generation tool. A user has masked part of their image. Generate 5 creative, concise ideas for what to fill the masked area with. The ideas should be short phrases.",

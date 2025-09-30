@@ -1,18 +1,24 @@
-
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Sidebar from './components/Sidebar';
 import TextToImagePanel from './components/panels/TextToImagePanel';
 import DrawToImagePanel from './components/panels/DrawToImagePanel';
 import GenerativeFillPanel from './components/panels/GenerativeFillPanel';
 import RemoveBackgroundPanel from './components/panels/RemoveBackgroundPanel';
-import Header from './components/Header';
+import HomePanel from './components/panels/HomePanel';
+import RecentFilesPanel from './components/panels/RecentFilesPanel';
+import CreateModal from './components/modals/CreateModal';
 import { Tool } from './types';
 
 const App: React.FC = () => {
-  const [activeTool, setActiveTool] = useState<Tool>(Tool.TEXT_TO_IMAGE);
+  const [activeTool, setActiveTool] = useState<Tool>(Tool.HOME);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
-  const renderContent = () => {
+  const content = useMemo(() => {
     switch (activeTool) {
+      case Tool.HOME:
+        return <HomePanel setActiveTool={setActiveTool} />;
+      case Tool.FILES:
+        return <RecentFilesPanel />;
       case Tool.TEXT_TO_IMAGE:
         return <TextToImagePanel />;
       case Tool.DRAW_TO_IMAGE:
@@ -22,19 +28,27 @@ const App: React.FC = () => {
       case Tool.REMOVE_BACKGROUND:
         return <RemoveBackgroundPanel />;
       default:
-        return <TextToImagePanel />;
+        return <HomePanel setActiveTool={setActiveTool} />;
     }
-  };
+  }, [activeTool]);
 
   return (
     <div className="flex h-screen bg-gray-900 text-gray-100 font-sans">
-      <Sidebar activeTool={activeTool} setActiveTool={setActiveTool} />
+      <Sidebar 
+        activeTool={activeTool} 
+        setActiveTool={setActiveTool} 
+        onOpenCreateModal={() => setIsCreateModalOpen(true)}
+      />
       <main className="flex-1 flex flex-col overflow-hidden">
-        <Header />
-        <div className="flex-1 p-6 md:p-8 overflow-y-auto">
-          {renderContent()}
+        <div className="flex-1 overflow-y-auto">
+          {content}
         </div>
       </main>
+      <CreateModal 
+        isOpen={isCreateModalOpen} 
+        onClose={() => setIsCreateModalOpen(false)} 
+        setActiveTool={setActiveTool} 
+      />
     </div>
   );
 };

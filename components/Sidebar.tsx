@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Tool } from '../types';
 import Icon from './ui/Icon';
@@ -6,48 +5,57 @@ import Icon from './ui/Icon';
 interface SidebarProps {
   activeTool: Tool;
   setActiveTool: (tool: Tool) => void;
+  onOpenCreateModal: () => void;
 }
 
-const SidebarButton: React.FC<{
+const NavButton: React.FC<{
   label: string;
   icon: React.ReactNode;
   isActive: boolean;
   onClick: () => void;
 }> = ({ label, icon, isActive, onClick }) => {
   const baseClasses =
-    'flex items-center w-full text-left p-3 rounded-lg transition-all duration-200 ease-in-out transform';
-  const activeClasses = 'bg-indigo-600 text-white shadow-lg';
-  const inactiveClasses = 'text-gray-300 hover:bg-gray-700 hover:text-white';
-  
+    'flex items-center w-full text-left p-3 rounded-lg transition-all duration-200 ease-in-out transform relative';
+  const activeClasses = 'bg-gray-700 text-white';
+  const inactiveClasses = 'text-gray-400 hover:bg-gray-700/50 hover:text-white';
+
   return (
     <button
       onClick={onClick}
       className={`${baseClasses} ${isActive ? activeClasses : inactiveClasses}`}
+      aria-label={label}
     >
-      <span className="mr-3">{icon}</span>
-      <span className="font-medium">{label}</span>
+      {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 bg-blue-500 rounded-r-full"></div>}
+      <span className="w-8 h-8 flex items-center justify-center">{icon}</span>
+      <span className="font-medium ml-3 hidden group-hover:inline whitespace-nowrap">{label}</span>
     </button>
   );
 };
 
-const Sidebar: React.FC<SidebarProps> = ({ activeTool, setActiveTool }) => {
-  const tools = [
-    { id: Tool.TEXT_TO_IMAGE, label: 'Text to Image', icon: <Icon type="text" /> },
-    { id: Tool.DRAW_TO_IMAGE, label: 'Draw to Image', icon: <Icon type="draw" /> },
-    { id: Tool.GENERATIVE_FILL, label: 'Generative Fill', icon: <Icon type="fill" /> },
-    { id: Tool.REMOVE_BACKGROUND, label: 'Remove Background', icon: <Icon type="cut" /> },
+
+const Sidebar: React.FC<SidebarProps> = ({ activeTool, setActiveTool, onOpenCreateModal }) => {
+  const mainNav = [
+    { id: Tool.HOME, label: 'Home', icon: <Icon type="home" /> },
+    { id: Tool.FILES, label: 'Files', icon: <Icon type="files" /> },
   ];
 
   return (
-    <aside className="w-64 bg-gray-800 p-4 flex flex-col border-r border-gray-700 shadow-xl">
-      <div className="mb-8">
-        <h2 className="text-2xl font-bold text-white flex items-center">
-         <Icon type="logo" /> <span className="ml-2">Gemini Studio</span>
-        </h2>
+    <aside className="w-20 hover:w-64 bg-[#181818] p-4 flex flex-col border-r border-gray-800 shadow-xl transition-all duration-300 ease-in-out group overflow-hidden">
+      <div className="mb-6 flex items-center space-x-3 px-1">
+         <Icon type="logo" />
+         <h1 className="text-xl font-semibold text-white hidden group-hover:inline whitespace-nowrap">Photoshop</h1>
       </div>
+      
+      <button 
+        onClick={onOpenCreateModal}
+        className="w-full flex items-center p-3 mb-6 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-500 transition-colors duration-200 shadow-md">
+        <span className="w-8 h-8 flex items-center justify-center"><Icon type="plus" /></span>
+        <span className="font-medium ml-3 hidden group-hover:inline whitespace-nowrap">Create</span>
+      </button>
+
       <nav className="space-y-2">
-        {tools.map((tool) => (
-          <SidebarButton
+        {mainNav.map((tool) => (
+          <NavButton
             key={tool.id}
             label={tool.label}
             icon={tool.icon}
@@ -56,8 +64,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTool, setActiveTool }) => {
           />
         ))}
       </nav>
-      <div className="mt-auto text-center text-xs text-gray-500">
-        <p>&copy; 2024. Powered by Gemini.</p>
+      <div className="mt-auto text-center text-xs text-gray-600">
+        <p className="hidden group-hover:block whitespace-nowrap">&copy; 2024. Powered by Gemini.</p>
       </div>
     </aside>
   );
