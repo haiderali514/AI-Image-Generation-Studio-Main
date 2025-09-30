@@ -6,6 +6,7 @@ import ImageUpload from '../ui/ImageUpload';
 import Button from '../ui/Button';
 import { fileToBase64 } from '../../utils/imageUtils';
 import Select from '../ui/Select';
+import ColorPicker from '../ui/ColorPicker';
 
 
 interface CreateModalProps {
@@ -23,20 +24,33 @@ interface CustomPreset {
   res: number;
   units: string;
   bg: string;
+  bgColor?: string;
 }
+
+const defaultPresets: (Partial<CustomPreset> & { name: string; w: number; h: number; })[] = [
+    { name: 'HDTV 1080p', w: 1920, h: 1080, res: 72 },
+    { name: 'Default', w: 1510, h: 1080, res: 72 },
+    { name: 'Instagram Post', w: 1080, h: 1080, res: 72 },
+    { name: 'Instagram Story', w: 1080, h: 1920, res: 72 },
+    { name: 'A4 Document', w: 2480, h: 3508, res: 300 },
+];
+
 
 const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose, setActiveTool }) => {
   const [activeView, setActiveView] = useState<ModalView>('quickStart');
   
   // State for the custom document form
-  const [docName, setDocName] = useState('Untitled-1');
-  const [width, setWidth] = useState(1920);
-  const [height, setHeight] = useState(1080);
-  const [units, setUnits] = useState('Pixels');
-  const [orientation, setOrientation] = useState<'landscape' | 'portrait'>('landscape');
-  const [resolution, setResolution] = useState(72);
-  const [background, setBackground] = useState('White');
-  const [customBgColor, setCustomBgColor] = useState('#FFFFFF');
+  const [docSettings, setDocSettings] = useState({
+    name: 'Untitled-1',
+    width: 1510,
+    height: 1080,
+    units: 'Pixels',
+    resolution: 72,
+    resolutionUnit: 'ppi',
+    background: 'White',
+    customBgColor: '#FFFFFF',
+    preset: 'Default',
+  });
   
   // State for presets
   const [customPresets, setCustomPresets] = useState<CustomPreset[]>([]);
@@ -47,6 +61,8 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose, setActiveToo
       if (savedPresets) {
         setCustomPresets(JSON.parse(savedPresets));
       }
+      // Reset to default view when opening
+      setActiveView('quickStart');
     }
   }, [isOpen]);
 
@@ -61,11 +77,12 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose, setActiveToo
     }
     const newPreset: CustomPreset = {
         name: presetName,
-        w: width,
-        h: height,
-        res: resolution,
-        units: units,
-        bg: background,
+        w: docSettings.width,
+        h: docSettings.height,
+        res: docSettings.resolution,
+        units: docSettings.units,
+        bg: docSettings.background,
+        bgColor: docSettings.customBgColor
     };
     const updatedPresets = [...customPresets, newPreset];
     setCustomPresets(updatedPresets);
@@ -94,13 +111,17 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose, setActiveToo
   };
   
   const handleSetPreset = (preset: Partial<CustomPreset> & { w: number, h: number, name: string }) => {
-    setWidth(preset.w);
-    setHeight(preset.h);
-    setDocName(preset.name);
-    setOrientation(preset.w > preset.h ? 'landscape' : 'portrait');
-    setResolution(preset.res ?? 72);
-    setUnits(preset.units ?? 'Pixels');
-    setBackground(preset.bg ?? 'White');
+    setDocSettings({
+        name: preset.name,
+        width: preset.w,
+        height: preset.h,
+        resolution: preset.res ?? 72,
+        resolutionUnit: 'ppi',
+        units: preset.units ?? 'Pixels',
+        background: preset.bg ?? 'White',
+        customBgColor: preset.bgColor ?? '#FFFFFF',
+        preset: preset.name,
+    });
     setActiveView('customDoc');
   };
 
@@ -125,14 +146,8 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose, setActiveToo
       case 'customDoc':
         return (
           <CustomDocumentContent
-            docName={docName} setDocName={setDocName}
-            width={width} setWidth={setWidth}
-            height={height} setHeight={setHeight}
-            units={units} setUnits={setUnits}
-            orientation={orientation} setOrientation={setOrientation}
-            resolution={resolution} setResolution={setResolution}
-            background={background} setBackground={setBackground}
-            customBgColor={customBgColor} setCustomBgColor={setCustomBgColor}
+            settings={docSettings}
+            setSettings={setDocSettings}
             onCreate={handleCreateCustom}
             onSavePreset={handleSavePreset}
           />
@@ -203,8 +218,8 @@ const QuickStartContent: React.FC<{onUpload: (file: File) => void, onToolSelect:
 const TabButton: React.FC<{ label: string; isActive: boolean; onClick: () => void; }> = ({ label, isActive, onClick }) => (
     <button 
         onClick={onClick}
-        className={`px-4 py-2 text-sm font-medium transition-colors ${
-            isActive ? 'border-b-2 border-blue-500 text-white' : 'text-gray-400 hover:text-white'
+        className={`px-4 py-2 text-sm font-medium transition-colors rounded-t-md ${
+            isActive ? 'bg-gray-700/50 text-white' : 'text-gray-400 hover:text-white'
         }`}
     >
         {label}
@@ -228,24 +243,22 @@ const BlankDocumentContent: React.FC<{
         setDeletingPresetName(null);
     };
 
-    const defaultPresets = [
-        { name: 'HDTV 1080p', w: 1920, h: 1080 },
-        { name: 'Default', w: 1920, h: 1080 },
-        { name: 'Instagram Post', w: 1080, h: 1080 },
-        { name: 'Instagram Story', w: 1080, h: 1920 },
-        { name: 'A4 Document', w: 2480, h: 3508 },
-    ]
+    const tabs = ['Recent', 'Saved', 'Photo', 'Print', 'Art & Illustration', 'Web', 'Mobile', 'Film & Video'];
+
     return (
         <div>
             <h2 className="text-2xl font-semibold text-gray-100 mb-4">Create a blank document</h2>
             <div className="flex border-b border-gray-700 mb-6">
                 <TabButton label="Recent" isActive={activeTab === 'recent'} onClick={() => setActiveTab('recent')} />
                 <TabButton label="Saved" isActive={activeTab === 'saved'} onClick={() => setActiveTab('saved')} />
+                {tabs.slice(2).map(tab => (
+                    <TabButton key={tab} label={tab} isActive={false} onClick={() => alert(`${tab} presets coming soon!`)} />
+                ))}
             </div>
             {activeTab === 'recent' && (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                     {defaultPresets.map(p => (
-                        <button key={p.name} onClick={() => onPresetSelect(p)} className="aspect-[4/3] bg-gray-800/50 border-2 border-transparent hover:border-blue-500 rounded-lg flex flex-col items-center justify-center p-4 transition-colors">
+                        <button key={p.name} onClick={() => onPresetSelect(p)} className="aspect-[4/3] bg-gray-800/50 border-2 border-gray-700 hover:border-blue-500 rounded-lg flex flex-col items-center justify-center p-4 transition-colors">
                             <Icon type="document" className="w-10 h-10 text-gray-500 mb-2"/>
                             <p className="font-semibold text-gray-200">{p.name}</p>
                             <p className="text-sm text-gray-400">{p.w} x {p.h} px</p>
@@ -264,7 +277,7 @@ const BlankDocumentContent: React.FC<{
                     ) : (
                         customPresets.map(p => (
                              <div key={p.name} className="group relative aspect-[4/3] bg-gray-800/50 rounded-lg">
-                                <button onClick={() => onPresetSelect(p)} className="w-full h-full border-2 border-transparent hover:border-blue-500 rounded-lg flex flex-col items-center justify-center p-4 transition-colors text-center">
+                                <button onClick={() => onPresetSelect(p)} className="w-full h-full border-2 border-gray-700 hover:border-blue-500 rounded-lg flex flex-col items-center justify-center p-4 transition-colors text-center">
                                     <Icon type="document" className="w-10 h-10 text-gray-500 mb-2"/>
                                     <p className="font-semibold text-gray-200 truncate w-full">{p.name}</p>
                                     <p className="text-sm text-gray-400">{p.w} x {p.h} {p.units}</p>
@@ -295,176 +308,219 @@ const BlankDocumentContent: React.FC<{
     )
 };
 
-const CustomDocumentContent: React.FC<any> = ({ docName, setDocName, width, setWidth, height, setHeight, units, setUnits, orientation, setOrientation, resolution, setResolution, background, setBackground, customBgColor, setCustomBgColor, onCreate, onSavePreset }) => {
-  
+const CustomDocumentContent: React.FC<{ settings: any, setSettings: any, onCreate: () => void, onSavePreset: (name: string) => void }> = ({ settings, setSettings, onCreate, onSavePreset }) => {
+  const { name, width, height, units, resolution, resolutionUnit, background, customBgColor, preset } = settings;
   const [isSavingPreset, setIsSavingPreset] = useState(false);
   const [presetNameToSave, setPresetNameToSave] = useState('');
   const [isAspectRatioLocked, setIsAspectRatioLocked] = useState(false);
   const aspectRatioRef = useRef(width / height);
+  const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
+  const colorPickerRef = useRef<HTMLDivElement>(null);
 
-  const unitOptions = [
-    { value: 'Pixels', label: 'Pixels' },
-    { value: 'Inches', label: 'Inches' },
-    { value: 'Centimeters', label: 'Centimeters' },
-    { value: 'Millimeters', label: 'Millimeters' },
-    { value: 'Points', label: 'Points' },
-    { value: 'Picas', label: 'Picas' },
-  ];
-
-  const backgroundOptions = [
-      { value: 'White', label: 'White' },
-      { value: 'Black', label: 'Black' },
-      { value: 'Transparent', label: 'Transparent' },
-      { value: 'Custom', label: 'Custom' },
-  ];
+  const updateSetting = (key: string, value: any) => {
+    setSettings((prev: any) => {
+      const newSettings = { ...prev, [key]: value };
+      if (key !== 'preset' && prev.preset !== 'Custom') {
+        newSettings.preset = 'Custom';
+      }
+      return newSettings;
+    });
+  };
   
+  const handlePresetChange = (presetName: string) => {
+    if (presetName === 'Custom') {
+        updateSetting('preset', 'Custom');
+        return;
+    }
+    const selected = defaultPresets.find(p => p.name === presetName);
+    if (selected) {
+        setSettings({
+            ...settings,
+            name: selected.name,
+            width: selected.w,
+            height: selected.h,
+            resolution: selected.res ?? 72,
+            units: selected.units ?? 'Pixels',
+            background: selected.bg ?? 'White',
+            customBgColor: selected.bgColor ?? '#FFFFFF',
+            preset: selected.name,
+        });
+    }
+  };
+  
+  const presetOptions = [
+    { value: 'Custom', label: 'Custom' },
+    ...defaultPresets.map(p => ({ value: p.name, label: p.name })),
+  ];
+  const filteredPresetOptions = preset === 'Custom' 
+    ? presetOptions 
+    : presetOptions.filter(p => p.value !== 'Custom');
+  
+  const unitOptions = ['Pixels', 'Inches', 'Centimeters', 'Millimeters', 'Points', 'Picas'].map(u => ({ value: u, label: u }));
+  const resolutionUnitOptions = [{ value: 'ppi', label: 'Pixels/Inch' }, { value: 'ppcm', label: 'Pixels/cm' }];
+  const backgroundOptions = ['White', 'Black', 'Transparent', 'Custom'].map(b => ({ value: b, label: b }));
+
   const handleInitiateSave = () => {
-    setPresetNameToSave(docName);
+    setPresetNameToSave(name);
     setIsSavingPreset(true);
   };
-
   const handleConfirmSave = () => {
     onSavePreset(presetNameToSave);
     setIsSavingPreset(false);
   };
-
-  const handleCancelSave = () => {
-    setIsSavingPreset(false);
-  };
+  const handleCancelSave = () => setIsSavingPreset(false);
 
   const toggleLock = () => {
     if (!isAspectRatioLocked) {
-        aspectRatioRef.current = width > 0 && height > 0 ? width / height : 1;
+        if (width > 0 && height > 0) {
+            aspectRatioRef.current = width / height;
+        }
     }
     setIsAspectRatioLocked(prev => !prev);
   };
 
   const handleWidthChange = (newWidthValue: string) => {
     const newWidth = parseInt(newWidthValue, 10) || 0;
-    setWidth(newWidth);
-    if (isAspectRatioLocked && aspectRatioRef.current > 0) {
-      setHeight(Math.round(newWidth / aspectRatioRef.current));
+    updateSetting('width', newWidth);
+    if (isAspectRatioLocked && aspectRatioRef.current !== 0) {
+      const newHeight = Math.round(newWidth / aspectRatioRef.current);
+      if (settings.height !== newHeight) {
+          updateSetting('height', newHeight);
+      }
     }
   };
-
   const handleHeightChange = (newHeightValue: string) => {
     const newHeight = parseInt(newHeightValue, 10) || 0;
-    setHeight(newHeight);
+    updateSetting('height', newHeight);
     if (isAspectRatioLocked) {
-      setWidth(Math.round(newHeight * aspectRatioRef.current));
+      const newWidth = Math.round(newHeight * aspectRatioRef.current);
+      if (settings.width !== newWidth) {
+          updateSetting('width', newWidth);
+      }
     }
   };
-
+  
   const handleOrientationChange = (newOrientation: 'portrait' | 'landscape') => {
-      setOrientation(newOrientation);
-      if ((newOrientation === 'landscape' && height > width) || (newOrientation === 'portrait' && width > height)) {
+      const currentOrientation = width >= height ? 'landscape' : 'portrait';
+      if (newOrientation !== currentOrientation && width > 0 && height > 0) {
           const oldWidth = width;
-          setWidth(height);
-          setHeight(oldWidth);
+          updateSetting('width', height);
+          updateSetting('height', oldWidth);
       }
   };
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (colorPickerRef.current && !colorPickerRef.current.contains(event.target as Node)) {
+        setIsColorPickerOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const orientation = width >= height ? 'landscape' : 'portrait';
+
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full max-w-md mx-auto">
       <h2 className="text-2xl font-semibold text-gray-100 mb-6">Create a custom blank document</h2>
-      <div className="flex-1 space-y-4 pr-4">
+      <div className="flex-1 space-y-5 pr-4 overflow-y-auto">
         {isSavingPreset ? (
           <div className="p-4 bg-gray-800/50 rounded-lg border border-gray-600 space-y-3">
             <label htmlFor="presetName" className="block text-sm font-semibold text-gray-300">Preset name</label>
-            <input 
-              id="presetName"
-              value={presetNameToSave} 
-              onChange={e => setPresetNameToSave(e.target.value)}
-              className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              autoFocus
-              onKeyDown={(e) => e.key === 'Enter' && handleConfirmSave()}
-            />
+            <Input id="presetName" value={presetNameToSave} onChange={e => setPresetNameToSave(e.target.value)} autoFocus onKeyDown={(e) => e.key === 'Enter' && handleConfirmSave()} />
             <div className="flex justify-end space-x-2 pt-2">
-              <Button variant="secondary" onClick={handleCancelSave} className="px-3 py-1 text-sm">Cancel</Button>
-              <Button onClick={handleConfirmSave} className="px-3 py-1 text-sm">Save</Button>
+              <Button variant="secondary" onClick={handleCancelSave} className="!px-4 !py-1 text-sm !bg-gray-600 hover:!bg-gray-500">Cancel</Button>
+              <Button onClick={handleConfirmSave} className="!bg-blue-600 hover:!bg-blue-500 !px-4 !py-1 text-sm">Save</Button>
             </div>
           </div>
         ) : (
-          <div>
-            <label htmlFor="docName" className="block text-sm font-medium text-gray-400 mb-1">Document name</label>
-            <div className="relative">
-              <input 
-                id="docName"
-                value={docName} 
-                onChange={e => setDocName(e.target.value)}
-                className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none pr-10"
-              />
-              <button 
-                onClick={handleInitiateSave}
-                title="Save Preset"
-                className="absolute right-1 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-white hover:bg-gray-600 rounded-md transition-colors"
-                aria-label="Save preset"
-              >
-                <Icon type="save" />
-              </button>
+            <div>
+              <label htmlFor="docName" className="block text-sm font-medium text-gray-400 mb-1">Document name <span className="text-red-400">*</span></label>
+              <div className="relative">
+                <Input id="docName" value={name} onChange={e => updateSetting('name', e.target.value)} />
+                 <div className="absolute right-1 top-1/2 -translate-y-1/2">
+                    <button onClick={handleInitiateSave} title="Save Preset" className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-600 rounded-md transition-colors" aria-label="Save preset">
+                        <Icon type="download" />
+                    </button>
+                </div>
+              </div>
             </div>
-          </div>
         )}
+        
+        <Select label="Preset" options={filteredPresetOptions} value={preset} onChange={handlePresetChange} />
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-[1fr,auto,1fr] items-end gap-x-4 gap-y-5">
             <Input label="Width" type="number" value={width} onChange={e => handleWidthChange(e.target.value)} />
-            <Select label="Units" options={unitOptions} value={units} onChange={setUnits} />
-        </div>
+            
+            <div className="row-span-2 flex items-center justify-center h-full">
+                <button onClick={toggleLock} title={isAspectRatioLocked ? "Constrain aspect ratio" : "Do not constrain aspect ratio"} className="p-1 my-1 rounded-md text-gray-500 hover:bg-gray-700 hover:text-white transition-colors">
+                    <Icon type={isAspectRatioLocked ? 'lock' : 'unlock'} className="w-5 h-5"/>
+                </button>
+            </div>
 
-        <div className="flex justify-center -my-2 text-gray-500">
-            <button 
-                onClick={toggleLock} 
-                title={isAspectRatioLocked ? "Constrain aspect ratio" : "Do not constrain aspect ratio"} 
-                className="p-1 rounded-md hover:bg-gray-700 hover:text-white transition-colors"
-            >
-                <Icon type={isAspectRatioLocked ? 'lock' : 'unlock'} className="w-8 h-8"/>
-            </button>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4 items-end">
+            <Select label="Units" options={unitOptions} value={units} onChange={val => updateSetting('units', val)} />
+            
             <Input label="Height" type="number" value={height} onChange={e => handleHeightChange(e.target.value)} />
+            
             <div>
                 <label className="block text-sm font-medium text-gray-400 mb-1">Orientation</label>
                 <div className="flex space-x-2">
-                    <button onClick={() => handleOrientationChange('portrait')} className={`p-2 rounded-md ${orientation === 'portrait' ? 'bg-blue-600' : 'bg-gray-600 hover:bg-gray-500'}`}><Icon type="orientation-portrait"/></button>
-                    <button onClick={() => handleOrientationChange('landscape')} className={`p-2 rounded-md ${orientation === 'landscape' ? 'bg-blue-600' : 'bg-gray-600 hover:bg-gray-500'}`}><Icon type="orientation-landscape"/></button>
+                    <button onClick={() => handleOrientationChange('portrait')} className={`p-2 rounded-md transition-colors ${orientation === 'portrait' ? 'bg-gray-500 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}><Icon type="orientation-portrait"/></button>
+                    <button onClick={() => handleOrientationChange('landscape')} className={`p-2 rounded-md transition-colors ${orientation === 'landscape' ? 'bg-gray-500 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}><Icon type="orientation-landscape"/></button>
                 </div>
             </div>
         </div>
-
-        <div className="grid grid-cols-2 gap-4 items-end">
-            <div>
-              <label className="block text-sm font-medium text-gray-400 mb-1">Resolution</label>
-              <div className="flex items-center space-x-2">
-                  <Input value={resolution} type="number" onChange={e => setResolution(parseInt(e.target.value))} />
-                  <span className="text-gray-400 text-sm">ppi</span>
-              </div>
-            </div>
-            <div>
-                 <label className="block text-sm font-medium text-gray-400 mb-1">Background contents</label>
-                 <div className="flex items-center space-x-2">
-                    <Select options={backgroundOptions} value={background} onChange={setBackground} />
-                    {background === 'Custom' && (
-                      <input type="color" value={customBgColor} onChange={e => setCustomBgColor(e.target.value)} className="w-10 h-10 p-0 border-none rounded cursor-pointer bg-transparent"/>
-                    )}
-                 </div>
-            </div>
+        
+        <div className="grid grid-cols-2 gap-4">
+            <Input label="Resolution" type="number" value={resolution} onChange={e => updateSetting('resolution', parseInt(e.target.value))} />
+            <Select label="&nbsp;" options={resolutionUnitOptions} value={resolutionUnit} onChange={val => updateSetting('resolutionUnit', val)} />
         </div>
+
+        <div className="relative">
+             <label className="block text-sm font-medium text-gray-400 mb-1">Background contents</label>
+             <div className="flex items-center space-x-2">
+                <div className="flex-1">
+                  <Select options={backgroundOptions} value={background} onChange={val => updateSetting('background', val)} />
+                </div>
+                <div className="relative" ref={colorPickerRef}>
+                  <button
+                    onClick={() => background === 'Custom' && setIsColorPickerOpen(p => !p)}
+                    className="w-10 h-10 p-0 border border-gray-600 rounded cursor-pointer disabled:cursor-not-allowed"
+                    disabled={background !== 'Custom'}
+                    style={{ backgroundColor: background === 'White' ? '#FFFFFF' : background === 'Black' ? '#000000' : background === 'Transparent' ? 'transparent' : customBgColor, backgroundImage: background === 'Transparent' ? `repeating-conic-gradient(#808080 0% 25%, transparent 0% 50%)` : 'none', backgroundSize: '10px 10px'}}
+                  />
+                  {isColorPickerOpen && background === 'Custom' && (
+                    <ColorPicker
+                      color={customBgColor}
+                      onChange={color => updateSetting('customBgColor', color)}
+                      onClose={() => setIsColorPickerOpen(false)}
+                    />
+                  )}
+                </div>
+             </div>
+        </div>
+        
+        <div>
+            <p className="text-sm text-gray-500">Color mode</p>
+            <p className="text-sm font-medium text-gray-300">RGB 8 bit</p>
+        </div>
+
       </div>
       <div className="flex justify-end pt-6 border-t border-gray-700/50">
-        <Button onClick={onCreate}>Create</Button>
+        <Button onClick={onCreate} className="!bg-blue-600 hover:!bg-blue-500 px-8">Create</Button>
       </div>
     </div>
   );
 };
 
-const Input: React.FC<{label?: string, value: any, onChange: any, type?: string}> = ({ label, ...props }) => (
+const Input: React.FC<{label?: string, value: any, onChange: any, type?: string, id?: string, autoFocus?: boolean, onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void}> = ({ label, ...props }) => (
     <div className="w-full">
-        {label && <label className="block text-sm font-medium text-gray-400 mb-1">{label}</label>}
+        {label && <label htmlFor={props.id} className="block text-sm font-medium text-gray-400 mb-1">{label}</label>}
         <div className="relative">
             <input 
                 {...props}
-                className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                className="w-full p-2 bg-gray-800/50 border border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
             />
         </div>
     </div>
