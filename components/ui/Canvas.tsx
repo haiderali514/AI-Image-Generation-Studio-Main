@@ -1,27 +1,29 @@
 
 import React, { useRef, useEffect, useImperativeHandle, useState } from 'react';
-import { EditorTool } from '../../types';
-
-type BrushShape = 'round' | 'butt' | 'square';
+import { EditorTool, BrushShape, TextAlign } from '../../types';
 
 export interface CanvasHandle {
-  undo: () => void;
-  redo: () => void;
   getCanvas: () => HTMLCanvasElement | null;
 }
 
 interface CanvasProps {
   width: number;
   height: number;
-  backgroundImage?: string;
-  backgroundColor?: string;
-  brushColor: string;
+  foregroundColor: string;
   brushSize: number;
-  brushOpacity?: number;
-  brushShape?: BrushShape;
-  clearToken?: number;
+  brushOpacity: number;
+  brushHardness: number;
+  brushShape: BrushShape;
+  fontSize: number;
+  fontFamily: string;
+  textAlign: TextAlign;
   activeTool: EditorTool;
-  onHistoryChange?: (state: { canUndo: boolean; canRedo: boolean }) => void;
+  isLocked: boolean;
+  selectionRect: { x: number, y: number, width: number, height: number } | null;
+  onSelectionChange: (rect: { x: number, y: number, width: number, height: number } | null) => void;
+  imageDataToRender: ImageData | null;
+  onDrawEnd: (imageData: ImageData) => void;
+  zoom?: number;
 }
 
 const hexToRgb = (hex: string) => {
@@ -40,56 +42,38 @@ const hexToRgb = (hex: string) => {
 
 
 const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
-  ({ width, height, backgroundImage, backgroundColor = 'transparent', brushColor, brushSize, brushOpacity = 1, brushShape = 'round', clearToken = 0, activeTool, onHistoryChange }, ref) => {
-    const backgroundCanvasRef = useRef<HTMLCanvasElement>(null);
+  (props, ref) => {
+    const { 
+        width, height, foregroundColor, brushSize, brushOpacity, brushHardness, 
+        brushShape, fontSize, fontFamily, textAlign, activeTool, isLocked, 
+        selectionRect, onSelectionChange, imageDataToRender, onDrawEnd, zoom = 1 
+    } = props;
+    
     const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
+    const interactionCanvasRef = useRef<HTMLCanvasElement>(null);
+
     const isDrawing = useRef(false);
     const lastPos = useRef<{ x: number, y: number } | null>(null);
     const shapeStartPos = useRef<{ x: number, y: number } | null>(null);
-    const preShapeState = useRef<ImageData | null>(null);
 
-    const [history, setHistory] = useState<ImageData[]>([]);
-    const [historyIndex, setHistoryIndex] = useState(-1);
+    const isMovingSelection = useRef(false);
+    const movingSelection = useRef<{ data: ImageData; startX: number; startY: number, originalRect: { x: number; y: number; width: number; height: number; } } | null>(null);
+
     const [textEdit, setTextEdit] = useState<{ x: number, y: number, value: string } | null>(null);
 
-    const getDrawingCtx = () => drawingCanvasRef.current?.getContext('2d');
-    const getBgCtx = () => backgroundCanvasRef.current?.getContext('2d');
-
-    const saveState = () => {
-      const ctx = getDrawingCtx();
-      const canvas = drawingCanvasRef.current;
-      if (!ctx || !canvas) return;
-
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const newHistory = history.slice(0, historyIndex + 1);
-      newHistory.push(imageData);
-      setHistory(newHistory);
-      setHistoryIndex(newHistory.length - 1);
-    };
-
-    const restoreState = (index: number) => {
-      const ctx = getDrawingCtx();
-      if (!ctx || !history[index]) return;
-      ctx.putImageData(history[index], 0, 0);
-    };
-
-    const undo = () => {
-      if (historyIndex > 0) {
-        setHistoryIndex(prev => prev - 1);
-      }
-    };
-
-    const redo = () => {
-      if (historyIndex < history.length - 1) {
-        setHistoryIndex(prev => prev + 1);
-      }
-    };
+    const getDrawingCtx = () => drawingCanvasRef.current?.getContext('2d', { willReadFrequently: true });
+    const getInteractionCtx = () => interactionCanvasRef.current?.getContext('2d');
 
     useImperativeHandle(ref, () => ({
-      undo,
-      redo,
       getCanvas: () => drawingCanvasRef.current,
     }));
+    
+    const handleDrawEnd = () => {
+        const ctx = getDrawingCtx();
+        const canvas = drawingCanvasRef.current;
+        if (!ctx || !canvas) return;
+        onDrawEnd(ctx.getImageData(0, 0, canvas.width, canvas.height));
+    }
 
     const finalizeTextInput = () => {
         if (!textEdit || !textEdit.value) {
@@ -98,11 +82,12 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
         }
         const ctx = getDrawingCtx();
         if (ctx) {
-            ctx.fillStyle = brushColor;
-            ctx.font = `${brushSize * 2}px sans-serif`; // Font size based on brush size
+            ctx.fillStyle = foregroundColor;
+            ctx.font = `${fontSize}px ${fontFamily}`;
+            ctx.textAlign = textAlign;
             ctx.textBaseline = 'top';
             ctx.fillText(textEdit.value, textEdit.x, textEdit.y);
-            saveState();
+            handleDrawEnd();
         }
         setTextEdit(null);
     };
@@ -115,7 +100,7 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
         const data = imageData.data;
         const startPos = (startY * width + startX) * 4;
         const startColor = [data[startPos], data[startPos + 1], data[startPos + 2], data[startPos + 3]];
-        const { r: fillR, g: fillG, b: fillB } = hexToRgb(brushColor);
+        const { r: fillR, g: fillG, b: fillB } = hexToRgb(foregroundColor);
 
         if (startColor[0] === fillR && startColor[1] === fillG && startColor[2] === fillB && startColor[3] === 255) return;
 
@@ -135,16 +120,60 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
             pixelStack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
         }
         ctx.putImageData(imageData, 0, 0);
-        saveState();
+        handleDrawEnd();
+    };
+    
+    // Brush stamping function with hardness
+    const stamp = (ctx: CanvasRenderingContext2D, x: number, y: number) => {
+      const radgrad = ctx.createRadialGradient(x, y, 0, x, y, brushSize / 2);
+      const { r, g, b } = hexToRgb(foregroundColor);
+      const colorWithOpacity = `rgba(${r}, ${g}, ${b}, ${brushOpacity})`;
+      const transparentColor = `rgba(${r}, ${g}, ${b}, 0)`;
+
+      radgrad.addColorStop(0, colorWithOpacity);
+      radgrad.addColorStop(Math.max(0.01, brushHardness), colorWithOpacity);
+      radgrad.addColorStop(1, transparentColor);
+
+      ctx.fillStyle = radgrad;
+      
+      if (brushShape === 'square') {
+          ctx.fillRect(x - brushSize / 2, y - brushSize / 2, brushSize, brushSize);
+      } else { // round
+          ctx.beginPath();
+          ctx.arc(x, y, brushSize / 2, 0, Math.PI * 2);
+          ctx.fill();
+      }
     };
 
     const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+        if (isLocked) return;
+
         finalizeTextInput();
         const canvas = drawingCanvasRef.current;
         if (!canvas) return;
         const rect = canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+        const x = (e.clientX - rect.left) / zoom;
+        const y = (e.clientY - rect.top) / zoom;
+
+        if (activeTool === EditorTool.MOVE) {
+            if (selectionRect) {
+                const { x: sx, y: sy, width: sw, height: sh } = selectionRect;
+                if (x >= sx && x <= sx + sw && y >= sy && y <= sy + sh) {
+                    isMovingSelection.current = true;
+                    const drawCtx = getDrawingCtx();
+                    if (drawCtx) {
+                        const selectionData = drawCtx.getImageData(sx, sy, sw, sh);
+                        movingSelection.current = { data: selectionData, startX: x, startY: y, originalRect: selectionRect };
+                        drawCtx.clearRect(sx, sy, sw, sh);
+                        onSelectionChange(null);
+                    }
+                    return;
+                }
+            }
+            // If not moving a selection, it's a pan event. Let it bubble up to CanvasArea.
+            return;
+        }
+
 
         switch (activeTool) {
             case EditorTool.BRUSH:
@@ -154,7 +183,7 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
                 const drawCtx = getDrawingCtx();
                 if (drawCtx) {
                     drawCtx.globalCompositeOperation = activeTool === EditorTool.ERASER ? 'destination-out' : 'source-over';
-                    drawCtx.beginPath(); // Start a new path
+                    stamp(drawCtx, x, y);
                 }
                 break;
             case EditorTool.FILL:
@@ -163,137 +192,203 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
             case EditorTool.TEXT:
                 setTextEdit({ x, y, value: '' });
                 break;
+            case EditorTool.SELECTION:
             case EditorTool.SHAPES:
                 isDrawing.current = true;
                 shapeStartPos.current = { x, y };
-                const shapeCtx = getDrawingCtx();
-                if (shapeCtx) {
-                    preShapeState.current = shapeCtx.getImageData(0, 0, width, height);
-                }
                 break;
         }
     };
 
     const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+        if (isLocked) return;
+        const canvas = drawingCanvasRef.current;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / zoom;
+        const y = (e.clientY - rect.top) / zoom;
+
+        if (isMovingSelection.current && movingSelection.current) {
+            const interactCtx = getInteractionCtx();
+            if (!interactCtx) return;
+
+            const { startX, startY, originalRect, data } = movingSelection.current;
+            const newX = originalRect.x + (x - startX);
+            const newY = originalRect.y + (y - startY);
+            
+            interactCtx.clearRect(0, 0, width, height);
+            interactCtx.putImageData(data, newX, newY);
+            return;
+        }
+        
         if (!isDrawing.current) return;
-        const ctx = getDrawingCtx();
-        if (!ctx) return;
-        const rect = drawingCanvasRef.current!.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+        
+        const drawCtx = getDrawingCtx();
+        const interactCtx = getInteractionCtx();
 
         switch (activeTool) {
             case EditorTool.BRUSH:
             case EditorTool.ERASER:
-                ctx.globalAlpha = brushOpacity;
-                ctx.strokeStyle = brushColor;
-                ctx.lineWidth = brushSize;
-                ctx.lineCap = brushShape;
-                ctx.lineJoin = 'round';
-                ctx.moveTo(lastPos.current?.x || x, lastPos.current?.y || y);
-                ctx.lineTo(x, y);
-                ctx.stroke();
+                if (!drawCtx || !lastPos.current) return;
+                
+                const dist = Math.hypot(x - lastPos.current.x, y - lastPos.current.y);
+                const angle = Math.atan2(y - lastPos.current.y, x - lastPos.current.x);
+                
+                // Interpolate for a smooth stroke
+                for (let i = 0; i < dist; i += Math.max(1, brushSize / 20)) {
+                    const currentX = lastPos.current.x + Math.cos(angle) * i;
+                    const currentY = lastPos.current.y + Math.sin(angle) * i;
+                    stamp(drawCtx, currentX, currentY);
+                }
+                stamp(drawCtx, x, y); // Ensure the end point is stamped
                 lastPos.current = { x, y };
                 break;
+            case EditorTool.SELECTION:
+                 if (interactCtx && shapeStartPos.current) {
+                    interactCtx.clearRect(0, 0, width, height);
+                    interactCtx.strokeStyle = '#FFFFFF';
+                    interactCtx.lineWidth = 1;
+                    interactCtx.setLineDash([4, 4]);
+                    interactCtx.strokeRect(shapeStartPos.current.x, shapeStartPos.current.y, x - shapeStartPos.current.x, y - shapeStartPos.current.y);
+                }
+                break;
             case EditorTool.SHAPES:
-                if (preShapeState.current && shapeStartPos.current) {
-                    ctx.putImageData(preShapeState.current, 0, 0);
-                    ctx.strokeStyle = brushColor;
-                    ctx.lineWidth = 2; // Fixed for shapes for now
-                    ctx.strokeRect(shapeStartPos.current.x, shapeStartPos.current.y, x - shapeStartPos.current.x, y - shapeStartPos.current.y);
+                if (interactCtx && shapeStartPos.current) {
+                    interactCtx.clearRect(0, 0, width, height);
+                    interactCtx.strokeStyle = foregroundColor;
+                    interactCtx.lineWidth = 2; // Fixed for shapes for now
+                    interactCtx.strokeRect(shapeStartPos.current.x, shapeStartPos.current.y, x - shapeStartPos.current.x, y - shapeStartPos.current.y);
                 }
                 break;
         }
     };
 
-    const handleMouseUp = () => {
+    const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+        if (isLocked) return;
+        if (isMovingSelection.current && movingSelection.current) {
+            const drawCtx = getDrawingCtx();
+            const interactCtx = getInteractionCtx();
+            if (drawCtx && interactCtx) {
+                const rect = drawingCanvasRef.current!.getBoundingClientRect();
+                const x = (e.clientX - rect.left) / zoom;
+                const y = (e.clientY - rect.top) / zoom;
+                const { startX, startY, originalRect, data } = movingSelection.current;
+                const newX = originalRect.x + (x - startX);
+                const newY = originalRect.y + (y - startY);
+                drawCtx.putImageData(data, newX, newY);
+                interactCtx.clearRect(0, 0, width, height);
+                handleDrawEnd();
+            }
+            isMovingSelection.current = false;
+            movingSelection.current = null;
+            return;
+        }
+        
         if (!isDrawing.current) return;
-        const ctx = getDrawingCtx();
 
+        const drawCtx = getDrawingCtx();
         isDrawing.current = false;
-        lastPos.current = null;
-        shapeStartPos.current = null;
-        preShapeState.current = null;
-
-        if (ctx) {
+        
+        if (drawCtx) {
              switch (activeTool) {
                 case EditorTool.BRUSH:
                 case EditorTool.ERASER:
-                    ctx.closePath();
-                    saveState();
+                    handleDrawEnd();
                     break;
                 case EditorTool.SHAPES:
-                    saveState();
+                     if (shapeStartPos.current) {
+                        const rect = drawingCanvasRef.current!.getBoundingClientRect();
+                        const x = (e.clientX - rect.left) / zoom;
+                        const y = (e.clientY - rect.top) / zoom;
+                        drawCtx.strokeStyle = foregroundColor;
+                        drawCtx.lineWidth = 2;
+                        drawCtx.strokeRect(shapeStartPos.current.x, shapeStartPos.current.y, x - shapeStartPos.current.x, y - shapeStartPos.current.y);
+                        getInteractionCtx()?.clearRect(0, 0, width, height);
+                        handleDrawEnd();
+                    }
+                    break;
+                case EditorTool.SELECTION:
+                    getInteractionCtx()?.clearRect(0, 0, width, height);
+                    if (shapeStartPos.current) {
+                        const rect = drawingCanvasRef.current!.getBoundingClientRect();
+                        const endX = (e.clientX - rect.left) / zoom;
+                        const endY = (e.clientY - rect.top) / zoom;
+                        const finalRect = {
+                            x: Math.min(shapeStartPos.current.x, endX),
+                            y: Math.min(shapeStartPos.current.y, endY),
+                            width: Math.abs(endX - shapeStartPos.current.x),
+                            height: Math.abs(endY - shapeStartPos.current.y),
+                        };
+                        if (finalRect.width > 2 && finalRect.height > 2) {
+                            onSelectionChange(finalRect);
+                        }
+                    }
                     break;
             }
-            ctx.globalCompositeOperation = 'source-over';
+            drawCtx.globalCompositeOperation = 'source-over';
         }
+        lastPos.current = null;
+        shapeStartPos.current = null;
     };
 
     useEffect(() => {
-      if (onHistoryChange) {
-        onHistoryChange({ canUndo: historyIndex > 0, canRedo: historyIndex < history.length - 1, });
+      const canvas = drawingCanvasRef.current;
+      if (!canvas) return;
+
+      if (isLocked) {
+        canvas.style.cursor = 'not-allowed';
+        return;
       }
-    }, [history, historyIndex, onHistoryChange]);
+
+      switch (activeTool) {
+          case EditorTool.MOVE:
+              canvas.style.cursor = 'move';
+              break;
+          case EditorTool.SELECTION:
+          case EditorTool.SHAPES:
+              canvas.style.cursor = 'crosshair';
+              break;
+          case EditorTool.TEXT:
+              canvas.style.cursor = 'text';
+              break;
+          case EditorTool.BRUSH:
+          case EditorTool.ERASER:
+          case EditorTool.FILL:
+              canvas.style.cursor = 'none'; // Use custom cursor from CanvasArea
+              break;
+          default:
+              canvas.style.cursor = 'default';
+      }
+    }, [activeTool, isLocked]);
 
     useEffect(() => {
-      if (history.length > 0 && historyIndex >= 0) {
-        restoreState(historyIndex);
-      }
-    }, [historyIndex]);
-
-    useEffect(() => {
-      const bgCanvas = backgroundCanvasRef.current;
-      const bgCtx = getBgCtx();
-      const drawingCtx = getDrawingCtx();
-      if (!bgCanvas || !bgCtx || !drawingCtx) return;
-    
-      bgCtx.clearRect(0, 0, width, height);
-      if (backgroundColor !== 'transparent') {
-        bgCtx.fillStyle = backgroundColor;
-        bgCtx.fillRect(0, 0, width, height);
-      }
-      
-      drawingCtx.clearRect(0, 0, width, height);
-
-      if (backgroundImage) {
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-        img.src = backgroundImage;
-        img.onload = () => {
-          const aspectRatio = img.width / img.height;
-          let newWidth = width, newHeight = height;
-          if (width / height > aspectRatio) newWidth = height * aspectRatio;
-          else newHeight = width / aspectRatio;
-          const xOffset = (width - newWidth) / 2;
-          const yOffset = (height - newHeight) / 2;
-          bgCtx.drawImage(img, xOffset, yOffset, newWidth, newHeight);
-        };
-      }
-      
-      const initialImageData = drawingCtx.getImageData(0, 0, width, height);
-      setHistory([initialImageData]);
-      setHistoryIndex(0);
-    }, [backgroundImage, width, height, clearToken, backgroundColor]);
+        const ctx = getDrawingCtx();
+        if (!ctx) return;
+        if (imageDataToRender) {
+            ctx.putImageData(imageDataToRender, 0, 0);
+        } else {
+            ctx.clearRect(0, 0, width, height);
+        }
+    }, [imageDataToRender, width, height]);
 
 
     return (
-      <div style={{ width, height }} className="relative">
-        <canvas
-            ref={backgroundCanvasRef}
-            width={width}
-            height={height}
-            className="absolute top-0 left-0 rounded-lg"
-        />
+      <div style={{ width, height }} className="absolute top-0 left-0">
         <canvas
             ref={drawingCanvasRef}
             width={width}
             height={height}
-            className="absolute top-0 left-0 border-2 border-gray-600 rounded-lg cursor-crosshair"
+            className="absolute top-0 left-0"
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
+        />
+        <canvas
+            ref={interactionCanvasRef}
+            width={width}
+            height={height}
+            className="absolute top-0 left-0 pointer-events-none"
         />
         {textEdit && (
             <input
@@ -306,10 +401,13 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
                     position: 'absolute',
                     left: textEdit.x,
                     top: textEdit.y,
+                    transform: `scale(${zoom})`,
+                    transformOrigin: 'top left',
                     border: '1px dotted #888',
                     background: 'rgba(0,0,0,0.5)',
-                    color: brushColor,
-                    font: `${brushSize * 2}px sans-serif`,
+                    color: foregroundColor,
+                    font: `${fontSize}px ${fontFamily}`,
+                    textAlign: textAlign,
                     outline: 'none',
                     lineHeight: 1,
                     padding: 0,

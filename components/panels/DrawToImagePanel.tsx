@@ -1,4 +1,5 @@
-import React, { useState, useRef, useCallback } from 'react';
+
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import Button from '../ui/Button';
 import Spinner from '../ui/Spinner';
 import Canvas, { CanvasHandle } from '../ui/Canvas';
@@ -8,7 +9,8 @@ import Icon from '../ui/Icon';
 import { Tool, EditorTool } from '../../types';
 
 const CANVAS_SIZE = 512;
-type BrushShape = 'round' | 'butt' | 'square';
+// FIX: Aligned BrushShape with the type in Canvas.tsx to resolve type error.
+type BrushShape = 'round' | 'square';
 
 const DrawToImagePanel: React.FC = () => {
   const [prompt, setPrompt] = useState<string>('');
@@ -20,13 +22,43 @@ const DrawToImagePanel: React.FC = () => {
   const [brushSize, setBrushSize] = useState(5);
   const [brushOpacity, setBrushOpacity] = useState(1);
   const [brushShape, setBrushShape] = useState<BrushShape>('round');
-  const [clearCanvasToken, setClearCanvasToken] = useState(0);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [isSuggesting, setIsSuggesting] = useState<boolean>(false);
   const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
 
+  // FIX: Implement local history management for undo/redo functionality
+  const [history, setHistory] = useState<(ImageData | null)[]>([null]);
+  const [historyIndex, setHistoryIndex] = useState(0);
+
+  const handleDrawEnd = (imageData: ImageData) => {
+    const newHistory = history.slice(0, historyIndex + 1);
+    newHistory.push(imageData);
+    setHistory(newHistory);
+    setHistoryIndex(newHistory.length - 1);
+  };
+
+  useEffect(() => {
+    setHistoryState({
+      canUndo: historyIndex > 0,
+      canRedo: historyIndex < history.length - 1,
+    });
+  }, [history, historyIndex]);
+
+  const handleUndo = () => {
+    if (historyIndex > 0) {
+      setHistoryIndex(historyIndex - 1);
+    }
+  };
+
+  const handleRedo = () => {
+    if (historyIndex < history.length - 1) {
+      setHistoryIndex(historyIndex + 1);
+    }
+  };
+
   const handleClearCanvas = useCallback(() => {
-    setClearCanvasToken(prev => prev + 1);
+    setHistory([null]);
+    setHistoryIndex(0);
   }, []);
 
   const handleGenerate = async () => {
@@ -98,8 +130,29 @@ const DrawToImagePanel: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 flex-1">
         <div className="flex flex-col space-y-4 items-center">
             <h2 className="text-2xl font-bold text-indigo-400 self-start">Sketch Your Idea</h2>
-            {/* FIX: Add the required 'activeTool' prop to the Canvas component. */}
-            <Canvas ref={canvasRef} width={CANVAS_SIZE} height={CANVAS_SIZE} brushColor={brushColor} brushSize={brushSize} brushOpacity={brushOpacity} brushShape={brushShape} clearToken={clearCanvasToken} onHistoryChange={setHistoryState} activeTool={EditorTool.BRUSH}/>
+            <div className="bg-gray-900">
+                {/* FIX: Add required props and remove unsupported props from Canvas component */}
+                <Canvas
+                  ref={canvasRef}
+                  width={CANVAS_SIZE}
+                  height={CANVAS_SIZE}
+                  // FIX: Changed 'brushColor' to 'foregroundColor' to match CanvasProps and added missing text-related props.
+                  foregroundColor={brushColor}
+                  brushSize={brushSize}
+                  brushOpacity={brushOpacity}
+                  brushShape={brushShape}
+                  activeTool={EditorTool.BRUSH}
+                  isLocked={false}
+                  selectionRect={null}
+                  onSelectionChange={() => {}}
+                  imageDataToRender={history[historyIndex]}
+                  onDrawEnd={handleDrawEnd}
+                  brushHardness={1}
+                  fontSize={0}
+                  fontFamily=""
+                  textAlign="left"
+                />
+            </div>
             <div className="p-4 bg-gray-800/50 border border-gray-700/50 rounded-lg w-full max-w-[512px] space-y-4">
                 <div className="grid grid-cols-[auto,1fr] items-center gap-x-4 gap-y-3">
                     <label htmlFor="brushColor" className="text-sm font-medium text-gray-300">Color</label>
@@ -121,8 +174,8 @@ const DrawToImagePanel: React.FC = () => {
                     </div>
                 </div>
                 <div className="flex items-center justify-end space-x-2 pt-2 border-t border-gray-700">
-                    <Button onClick={() => canvasRef.current?.undo()} disabled={!historyState.canUndo} variant="secondary" icon={<Icon type="undo" />} aria-label="Undo" title="Undo (Ctrl+Z)" />
-                    <Button onClick={() => canvasRef.current?.redo()} disabled={!historyState.canRedo} variant="secondary" icon={<Icon type="redo" />} aria-label="Redo" title="Redo (Ctrl+Y)" />
+                    <Button onClick={handleUndo} disabled={!historyState.canUndo} variant="secondary" icon={<Icon type="undo" />} aria-label="Undo" title="Undo (Ctrl+Z)" />
+                    <Button onClick={handleRedo} disabled={!historyState.canRedo} variant="secondary" icon={<Icon type="redo" />} aria-label="Redo" title="Redo (Ctrl+Y)" />
                     <Button onClick={handleClearCanvas} variant="secondary" icon={<Icon type="clear" />} title="Clear entire canvas">Clear</Button>
                 </div>
             </div>

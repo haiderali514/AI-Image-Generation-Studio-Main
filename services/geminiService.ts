@@ -67,7 +67,8 @@ export const generateImageFromText = async (prompt: string, width: number = 1024
 
 const editImage = async (imageBase64: string, mimeType: string, prompt: string): Promise<string> => {
   const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash-image-preview',
+    // FIX: Use correct model name 'gemini-2.5-flash-image' instead of deprecated 'gemini-2.5-flash-image-preview'.
+    model: 'gemini-2.5-flash-image',
     contents: {
       parts: [
         {
@@ -109,7 +110,6 @@ export const removeBackground = async (imageBase64: string, mimeType: string): P
   return editImage(imageBase64, mimeType, prompt);
 };
 
-// FIX: Add missing properties HOME and FILES to `suggestionPrompts` to satisfy the `Record<Tool, string>` type.
 const suggestionPrompts: Record<Tool, string> = {
   [Tool.HOME]: "", // Not applicable
   [Tool.FILES]: "", // Not applicable

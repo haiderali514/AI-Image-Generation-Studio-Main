@@ -1,3 +1,4 @@
+
 import React from 'react';
 import Icon from '../ui/Icon';
 
@@ -6,6 +7,10 @@ interface EditorHeaderProps {
   onClose: () => void;
   zoom: number;
   onZoom: (update: number | 'in' | 'out' | 'reset') => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
 }
 
 /**
@@ -13,7 +18,7 @@ interface EditorHeaderProps {
  * Its responsibility is to display the document name, provide a way to return home,
  * and contain primary actions like downloading or sharing.
  */
-const EditorHeader: React.FC<EditorHeaderProps> = ({ documentName, onClose, zoom, onZoom }) => {
+const EditorHeader: React.FC<EditorHeaderProps> = ({ documentName, onClose, zoom, onZoom, canUndo, canRedo, onUndo, onRedo }) => {
   const zoomPercentage = Math.round(zoom * 100);
 
   return (
@@ -29,12 +34,19 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({ documentName, onClose, zoom
       </div>
 
       <div className="absolute left-1/2 -translate-x-1/2 flex items-center space-x-2 bg-gray-900/50 p-1 rounded-lg">
+        <button onClick={onUndo} disabled={!canUndo} className="p-1.5 rounded-md hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title="Undo (Ctrl+Z)">
+          <Icon type="undo" />
+        </button>
+        <button onClick={onRedo} disabled={!canRedo} className="p-1.5 rounded-md hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title="Redo (Ctrl+Y)">
+          <Icon type="redo" />
+        </button>
+        <div className="w-px h-5 bg-gray-600 mx-1" />
         <button onClick={() => onZoom('out')} className="p-1.5 rounded-md hover:bg-gray-700 transition-colors" title="Zoom Out (-)">
           <Icon type="zoom-out" />
         </button>
-        <button 
-          onClick={() => onZoom('reset')} 
-          className="text-sm font-semibold text-gray-300 w-16 text-center rounded-md hover:bg-gray-700 border border-transparent hover:border-gray-600 transition-colors px-2 py-1" 
+        <button
+          onClick={() => onZoom('reset')}
+          className="text-sm font-semibold text-gray-300 w-16 text-center rounded-md hover:bg-gray-700 border border-transparent hover:border-gray-600 transition-colors px-2 py-1"
           title="Reset Zoom to 100%"
         >
             {zoomPercentage}%

@@ -12,6 +12,8 @@ export enum Tool {
  * Defines the set of tools available within the main editor.
  */
 export enum EditorTool {
+  MOVE = 'MOVE',
+  SELECTION = 'SELECTION',
   BRUSH = 'BRUSH',
   ERASER = 'ERASER',
   FILL = 'FILL',
@@ -33,6 +35,7 @@ export interface DocumentSettings {
   customBgColor: string;
 }
 
+
 /**
  * Represents a saved project with metadata for the recent files list.
  */
@@ -41,3 +44,28 @@ export interface RecentProject extends DocumentSettings {
   lastModified: number;
   thumbnail?: string;
 }
+
+/**
+ * Represents a single layer in the editor.
+ */
+export interface Layer {
+  id: string;
+  name: string;
+  isVisible: boolean;
+  isLocked: boolean;
+  opacity: number; // 0-1
+  blendMode: 'normal'; // More can be added later
+  // History for this layer
+  history: (ImageData | null)[]; // Use null for initial empty state
+  historyIndex: number;
+}
+
+/**
+ * Defines the possible text alignment options for the Text tool.
+ */
+export type TextAlign = 'left' | 'center' | 'right';
+
+/**
+ * Defines the possible shapes for the brush tip.
+ */
+export type BrushShape = 'round' | 'square';
