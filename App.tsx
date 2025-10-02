@@ -19,7 +19,11 @@ const App: React.FC = () => {
   const [documentSettings, setDocumentSettings] = useState<DocumentSettings | null>(null);
 
   const handleCreateDocument = (settings: DocumentSettings) => {
-    const newProject = addRecentProject(settings);
+    const newProject = addRecentProject({
+        ...settings,
+        background: 'White', // Force a white background for new documents for a standard starting canvas
+        customBgColor: '#FFFFFF',
+    });
     setDocumentSettings(newProject);
     setIsEditorOpen(true);
     setIsCreateModalOpen(false);
@@ -34,6 +38,12 @@ const App: React.FC = () => {
     setIsEditorOpen(false);
     setDocumentSettings(null);
     setActiveTool(Tool.HOME); // Return to home screen
+  };
+
+  const handleOpenNewDocument = () => {
+    setIsEditorOpen(false);
+    setDocumentSettings(null);
+    setIsCreateModalOpen(true);
   };
 
   const content = useMemo(() => {
@@ -56,7 +66,7 @@ const App: React.FC = () => {
   }, [activeTool]);
 
   if (isEditorOpen && documentSettings) {
-    return <Editor document={documentSettings} onClose={handleCloseEditor} />;
+    return <Editor document={documentSettings} onClose={handleCloseEditor} onNew={handleOpenNewDocument} />;
   }
 
   return (

@@ -19,7 +19,11 @@ export enum EditorTool {
   FILL = 'FILL',
   TEXT = 'TEXT',
   SHAPES = 'SHAPES',
+  TRANSFORM = 'TRANSFORM',
+  CROP = 'CROP',
 }
+
+export type AutoSelectType = 'Layer' | 'Group';
 
 /**
  * Defines the properties for a new document created by the user.
@@ -45,6 +49,9 @@ export interface RecentProject extends DocumentSettings {
   thumbnail?: string;
 }
 
+export type BlendMode = 'normal' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten' | 'color-dodge' | 'color-burn' | 'hard-light' | 'soft-light' | 'difference' | 'exclusion' | 'hue' | 'saturation' | 'color' | 'luminosity';
+
+
 /**
  * Represents a single layer in the editor.
  */
@@ -53,8 +60,10 @@ export interface Layer {
   name: string;
   isVisible: boolean;
   isLocked: boolean;
+  isBackground?: boolean; 
   opacity: number; // 0-1
-  blendMode: 'normal'; // More can be added later
+  blendMode: BlendMode;
+  thumbnail?: string;
   // History for this layer
   history: (ImageData | null)[]; // Use null for initial empty state
   historyIndex: number;

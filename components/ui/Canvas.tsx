@@ -19,8 +19,11 @@ interface CanvasProps {
   textAlign: TextAlign;
   activeTool: EditorTool;
   isLocked: boolean;
+  isBackground?: boolean;
+  onAttemptEditBackgroundLayer?: () => void;
   selectionRect: { x: number, y: number, width: number, height: number } | null;
   onSelectionChange: (rect: { x: number, y: number, width: number, height: number } | null) => void;
+  onSelectionPreview: (rect: { x: number, y: number, width: number, height: number } | null) => void;
   imageDataToRender: ImageData | null;
   onDrawEnd: (imageData: ImageData) => void;
   zoom?: number;
@@ -45,8 +48,9 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
   (props, ref) => {
     const { 
         width, height, foregroundColor, brushSize, brushOpacity, brushHardness, 
-        brushShape, fontSize, fontFamily, textAlign, activeTool, isLocked, 
-        selectionRect, onSelectionChange, imageDataToRender, onDrawEnd, zoom = 1 
+        brushShape, fontSize, fontFamily, textAlign, activeTool, isLocked, isBackground,
+        onAttemptEditBackgroundLayer, selectionRect, onSelectionChange, onSelectionPreview, 
+        imageDataToRender, onDrawEnd, zoom = 1 
     } = props;
     
     const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -82,11 +86,22 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
         }
         const ctx = getDrawingCtx();
         if (ctx) {
+            if (selectionRect) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(selectionRect.x, selectionRect.y, selectionRect.width, selectionRect.height);
+                ctx.clip();
+            }
+
             ctx.fillStyle = foregroundColor;
             ctx.font = `${fontSize}px ${fontFamily}`;
             ctx.textAlign = textAlign;
             ctx.textBaseline = 'top';
             ctx.fillText(textEdit.value, textEdit.x, textEdit.y);
+            
+            if (selectionRect) {
+                ctx.restore();
+            }
             handleDrawEnd();
         }
         setTextEdit(null);
@@ -107,9 +122,17 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
         const pixelStack = [[startX, startY]];
         while (pixelStack.length > 0) {
             const [x, y] = pixelStack.pop()!;
+            
+            if (x < 0 || x >= width || y < 0 || y >= height) continue;
+            
+            if (selectionRect) {
+                if (x < selectionRect.x || x >= selectionRect.x + selectionRect.width || y < selectionRect.y || y >= selectionRect.y + selectionRect.height) {
+                    continue;
+                }
+            }
+            
             const currentPos = (y * width + x) * 4;
 
-            if (x < 0 || x >= width || y < 0 || y >= height) continue;
             if (data[currentPos] !== startColor[0] || data[currentPos + 1] !== startColor[1] || data[currentPos + 2] !== startColor[2] || data[currentPos + 3] !== startColor[3]) continue;
 
             data[currentPos] = fillR;
@@ -146,6 +169,13 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
     };
 
     const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+        const isDrawingTool = [EditorTool.BRUSH, EditorTool.ERASER, EditorTool.FILL, EditorTool.TEXT, EditorTool.SHAPES].includes(activeTool);
+        
+        if (isBackground && isDrawingTool) {
+            onAttemptEditBackgroundLayer?.();
+            return;
+        }
+
         if (isLocked) return;
 
         finalizeTextInput();
@@ -154,6 +184,13 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
         const rect = canvas.getBoundingClientRect();
         const x = (e.clientX - rect.left) / zoom;
         const y = (e.clientY - rect.top) / zoom;
+        
+        if (selectionRect && isDrawingTool) {
+            const { x: sx, y: sy, width: sw, height: sh } = selectionRect;
+            if (x < sx || x >= sx + sw || y < sy || y >= sy + sh) {
+                return; // Click is outside selection, do nothing for drawing tools
+            }
+        }
 
         if (activeTool === EditorTool.MOVE) {
             if (selectionRect) {
@@ -165,7 +202,7 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
                         const selectionData = drawCtx.getImageData(sx, sy, sw, sh);
                         movingSelection.current = { data: selectionData, startX: x, startY: y, originalRect: selectionRect };
                         drawCtx.clearRect(sx, sy, sw, sh);
-                        onSelectionChange(null);
+                        // Do not clear final selection, just the content
                     }
                     return;
                 }
@@ -182,6 +219,12 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
                 lastPos.current = { x, y };
                 const drawCtx = getDrawingCtx();
                 if (drawCtx) {
+                    drawCtx.save(); // Save context state before clipping
+                    if (selectionRect) {
+                        drawCtx.beginPath();
+                        drawCtx.rect(selectionRect.x, selectionRect.y, selectionRect.width, selectionRect.height);
+                        drawCtx.clip();
+                    }
                     drawCtx.globalCompositeOperation = activeTool === EditorTool.ERASER ? 'destination-out' : 'source-over';
                     stamp(drawCtx, x, y);
                 }
@@ -209,15 +252,10 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
         const y = (e.clientY - rect.top) / zoom;
 
         if (isMovingSelection.current && movingSelection.current) {
-            const interactCtx = getInteractionCtx();
-            if (!interactCtx) return;
-
-            const { startX, startY, originalRect, data } = movingSelection.current;
+             const { startX, startY, originalRect } = movingSelection.current;
             const newX = originalRect.x + (x - startX);
             const newY = originalRect.y + (y - startY);
-            
-            interactCtx.clearRect(0, 0, width, height);
-            interactCtx.putImageData(data, newX, newY);
+            onSelectionChange({ ...originalRect, x: newX, y: newY });
             return;
         }
         
@@ -244,12 +282,14 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
                 lastPos.current = { x, y };
                 break;
             case EditorTool.SELECTION:
-                 if (interactCtx && shapeStartPos.current) {
-                    interactCtx.clearRect(0, 0, width, height);
-                    interactCtx.strokeStyle = '#FFFFFF';
-                    interactCtx.lineWidth = 1;
-                    interactCtx.setLineDash([4, 4]);
-                    interactCtx.strokeRect(shapeStartPos.current.x, shapeStartPos.current.y, x - shapeStartPos.current.x, y - shapeStartPos.current.y);
+                 if (shapeStartPos.current) {
+                    const previewRect = {
+                        x: Math.min(shapeStartPos.current.x, x),
+                        y: Math.min(shapeStartPos.current.y, y),
+                        width: Math.abs(x - shapeStartPos.current.x),
+                        height: Math.abs(y - shapeStartPos.current.y),
+                    };
+                    onSelectionPreview(previewRect);
                 }
                 break;
             case EditorTool.SHAPES:
@@ -267,16 +307,9 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
         if (isLocked) return;
         if (isMovingSelection.current && movingSelection.current) {
             const drawCtx = getDrawingCtx();
-            const interactCtx = getInteractionCtx();
-            if (drawCtx && interactCtx) {
-                const rect = drawingCanvasRef.current!.getBoundingClientRect();
-                const x = (e.clientX - rect.left) / zoom;
-                const y = (e.clientY - rect.top) / zoom;
-                const { startX, startY, originalRect, data } = movingSelection.current;
-                const newX = originalRect.x + (x - startX);
-                const newY = originalRect.y + (y - startY);
-                drawCtx.putImageData(data, newX, newY);
-                interactCtx.clearRect(0, 0, width, height);
+            const { data, originalRect, startX, startY } = movingSelection.current;
+            if (drawCtx && selectionRect) {
+                drawCtx.putImageData(data, selectionRect.x, selectionRect.y);
                 handleDrawEnd();
             }
             isMovingSelection.current = false;
@@ -293,6 +326,7 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
              switch (activeTool) {
                 case EditorTool.BRUSH:
                 case EditorTool.ERASER:
+                    drawCtx.restore(); // Restore context to remove clipping
                     handleDrawEnd();
                     break;
                 case EditorTool.SHAPES:
@@ -300,15 +334,28 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
                         const rect = drawingCanvasRef.current!.getBoundingClientRect();
                         const x = (e.clientX - rect.left) / zoom;
                         const y = (e.clientY - rect.top) / zoom;
+                        
+                        if (selectionRect) {
+                            drawCtx.save();
+                            drawCtx.beginPath();
+                            drawCtx.rect(selectionRect.x, selectionRect.y, selectionRect.width, selectionRect.height);
+                            drawCtx.clip();
+                        }
+                        
                         drawCtx.strokeStyle = foregroundColor;
                         drawCtx.lineWidth = 2;
                         drawCtx.strokeRect(shapeStartPos.current.x, shapeStartPos.current.y, x - shapeStartPos.current.x, y - shapeStartPos.current.y);
+                        
+                        if (selectionRect) {
+                            drawCtx.restore();
+                        }
+
                         getInteractionCtx()?.clearRect(0, 0, width, height);
                         handleDrawEnd();
                     }
                     break;
                 case EditorTool.SELECTION:
-                    getInteractionCtx()?.clearRect(0, 0, width, height);
+                    onSelectionPreview(null);
                     if (shapeStartPos.current) {
                         const rect = drawingCanvasRef.current!.getBoundingClientRect();
                         const endX = (e.clientX - rect.left) / zoom;
@@ -321,6 +368,8 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
                         };
                         if (finalRect.width > 2 && finalRect.height > 2) {
                             onSelectionChange(finalRect);
+                        } else {
+                            onSelectionChange(null);
                         }
                     }
                     break;
@@ -346,6 +395,8 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
               break;
           case EditorTool.SELECTION:
           case EditorTool.SHAPES:
+          case EditorTool.CROP:
+          case EditorTool.TRANSFORM:
               canvas.style.cursor = 'crosshair';
               break;
           case EditorTool.TEXT:
@@ -382,7 +433,7 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
+            onMouseLeave={(e) => { if(isDrawing.current || isMovingSelection.current) handleMouseUp(e);}}
         />
         <canvas
             ref={interactionCanvasRef}

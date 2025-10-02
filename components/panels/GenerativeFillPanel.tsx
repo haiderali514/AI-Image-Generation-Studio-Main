@@ -1,4 +1,5 @@
 
+
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import Button from '../ui/Button';
 import Spinner from '../ui/Spinner';
@@ -207,6 +208,8 @@ const GenerativeFillPanel: React.FC = () => {
                   isLocked={false}
                   selectionRect={null}
                   onSelectionChange={() => {}}
+                  // FIX: Add missing 'onSelectionPreview' prop.
+                  onSelectionPreview={() => {}}
                   imageDataToRender={history[historyIndex]}
                   onDrawEnd={handleDrawEnd}
                   brushHardness={1}

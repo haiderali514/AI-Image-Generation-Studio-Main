@@ -1,70 +1,130 @@
 
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Icon from '../ui/Icon';
+import FileMenu from './FileMenu';
 
 interface EditorHeaderProps {
   documentName: string;
   onClose: () => void;
-  zoom: number;
-  onZoom: (update: number | 'in' | 'out' | 'reset') => void;
+  onNew: () => void;
+  onSaveAs: () => void;
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
+  zoom: number;
+  onZoomChange: (zoom: number) => void;
 }
 
-/**
- * Renders the header for the main editor view.
- * Its responsibility is to display the document name, provide a way to return home,
- * and contain primary actions like downloading or sharing.
- */
-const EditorHeader: React.FC<EditorHeaderProps> = ({ documentName, onClose, zoom, onZoom, canUndo, canRedo, onUndo, onRedo }) => {
-  const zoomPercentage = Math.round(zoom * 100);
+const ZoomDropdown: React.FC<{ zoom: number; onZoomChange: (zoom: number) => void }> = ({ zoom, onZoomChange }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+    const zoomLevels = [0.25, 0.5, 0.75, 1, 1.5, 2, 3];
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    return (
+        <div ref={dropdownRef} className="relative">
+            <button
+                onClick={() => setIsOpen(!isOpen)}
+                className="px-3 py-1.5 bg-[#363636] border border-transparent hover:border-gray-500 rounded-md flex items-center space-x-2"
+            >
+                <span>{Math.round(zoom * 100)}%</span>
+                <Icon type="chevron-down" className="w-4 h-4" />
+            </button>
+            {isOpen && (
+                <div className="absolute top-full mt-1.5 w-32 bg-[#363636] border border-black/50 rounded-md shadow-lg py-1 z-20">
+                    {zoomLevels.map(level => (
+                        <button
+                            key={level}
+                            onClick={() => { onZoomChange(level); setIsOpen(false); }}
+                            className="w-full text-left px-3 py-1.5 text-sm hover:bg-blue-600"
+                        >
+                            {level * 100}%
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const EditorHeader: React.FC<EditorHeaderProps> = (props) => {
+  const { documentName, onClose, onNew, onSaveAs, canUndo, canRedo, onUndo, onRedo, zoom, onZoomChange } = props;
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   return (
-    <header className="bg-[#2D2D2D] h-16 px-4 flex justify-between items-center border-b border-black/20 shadow-md z-10 flex-shrink-0">
-      <div className="flex items-center space-x-4">
-        <Icon type="logo" />
-        <div className="w-px h-6 bg-gray-600" />
-        <button onClick={onClose} className="p-2 rounded-md hover:bg-gray-700 transition-colors" title="Back to Home">
-          <Icon type="home" />
-        </button>
-        <div className="w-px h-6 bg-gray-600" />
-        <h1 className="text-lg font-medium text-gray-200">{documentName}</h1>
+    <header className="bg-[#2D2D2D] h-14 px-2 flex justify-between items-center border-b border-black/20 shadow-sm z-20 flex-shrink-0">
+      <div className="flex items-center space-x-2">
+        <div ref={menuRef} className="relative">
+            <button onClick={() => setIsMenuOpen(p => !p)} className="p-2 rounded-md hover:bg-[#363636]" title="Menu">
+                <Icon type="menu" />
+            </button>
+            {isMenuOpen && (
+                <FileMenu
+                    onBackToHome={onClose}
+                    onNew={onNew}
+                    onSaveAs={onSaveAs}
+                />
+            )}
+        </div>
+        <Icon type="ps-logo" />
+        <div className="text-gray-400 text-sm truncate max-w-xs">{documentName}</div>
+        <Icon type="cloud" className="text-gray-500" />
       </div>
 
-      <div className="absolute left-1/2 -translate-x-1/2 flex items-center space-x-2 bg-gray-900/50 p-1 rounded-lg">
-        <button onClick={onUndo} disabled={!canUndo} className="p-1.5 rounded-md hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title="Undo (Ctrl+Z)">
+      <div className="flex items-center space-x-3 text-gray-400">
+        <button onClick={onUndo} disabled={!canUndo} className="p-1.5 rounded-md hover:bg-[#363636] disabled:opacity-40" title="Undo">
           <Icon type="undo" />
         </button>
-        <button onClick={onRedo} disabled={!canRedo} className="p-1.5 rounded-md hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title="Redo (Ctrl+Y)">
+        <button onClick={onRedo} disabled={!canRedo} className="p-1.5 rounded-md hover:bg-[#363636] disabled:opacity-40" title="Redo">
           <Icon type="redo" />
         </button>
-        <div className="w-px h-5 bg-gray-600 mx-1" />
-        <button onClick={() => onZoom('out')} className="p-1.5 rounded-md hover:bg-gray-700 transition-colors" title="Zoom Out (-)">
-          <Icon type="zoom-out" />
-        </button>
-        <button
-          onClick={() => onZoom('reset')}
-          className="text-sm font-semibold text-gray-300 w-16 text-center rounded-md hover:bg-gray-700 border border-transparent hover:border-gray-600 transition-colors px-2 py-1"
-          title="Reset Zoom to 100%"
-        >
-            {zoomPercentage}%
-        </button>
-        <button onClick={() => onZoom('in')} className="p-1.5 rounded-md hover:bg-gray-700 transition-colors" title="Zoom In (+)">
-          <Icon type="zoom-in" />
-        </button>
+        <div className="w-px h-6 bg-gray-600/50 mx-1" />
+        <ZoomDropdown zoom={zoom} onZoomChange={onZoomChange} />
       </div>
 
-      <div className="flex items-center space-x-4">
-        <button className="px-4 py-2 text-sm font-semibold rounded-md bg-blue-600 text-white hover:bg-blue-500 transition-colors">
+      <div className="flex items-center space-x-1.5">
+        <button className="px-3 py-1.5 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-white font-semibold text-xs flex items-center space-x-1">
+            <span>👑</span>
+            <span>Upgrade</span>
+        </button>
+        <button className="px-3 py-1.5 text-sm font-semibold rounded-md hover:bg-[#363636]">
+          Invite
+        </button>
+        <button onClick={onSaveAs} className="px-4 py-1.5 text-sm font-semibold rounded-md bg-[#2F6FEF] text-white hover:bg-blue-500">
           Download
         </button>
-        <button className="p-2 rounded-full hover:bg-gray-700" title="Notifications">
-            <Icon type="notification"/>
+        <button className="p-2 rounded-md hover:bg-[#363636]" title="Share">
+          <Icon type="share" />
         </button>
-        <button className="p-2 rounded-full hover:bg-gray-700" title="Profile">
-            <Icon type="profile"/>
+        <button className="p-2 rounded-md hover:bg-[#363636]" title="Comments">
+          <Icon type="comment" />
+        </button>
+        <button className="p-2 rounded-md hover:bg-[#363636]" title="History">
+          <Icon type="history" />
+        </button>
+        <button className="p-1 rounded-full" title="Profile">
+          <Icon type="profile" />
         </button>
       </div>
     </header>
