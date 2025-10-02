@@ -134,10 +134,12 @@ const TopToolbar: React.FC<TopToolbarProps> = (props) => {
     
     const renderContent = () => {
         switch(props.activeTool) {
-            case EditorTool.BRUSH:
-            case EditorTool.ERASER:
+            // FIX: Property 'BRUSH' does not exist on type 'typeof EditorTool'.
+            // FIX: Property 'ERASER' does not exist on type 'typeof EditorTool'.
+            case EditorTool.PAINT:
                 return <BrushEraserOptions {...props} />;
-            case EditorTool.TEXT:
+            // FIX: Property 'TEXT' does not exist on type 'typeof EditorTool'.
+            case EditorTool.TYPE:
                 return <TextOptions {...props} />;
             case EditorTool.MOVE:
                 return <MoveOptions />;

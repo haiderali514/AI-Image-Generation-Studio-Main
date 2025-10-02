@@ -12,6 +12,29 @@ interface PropertiesPanelProps {
     onClose: () => void;
 }
 
+// FIX: Change panel type from React.ReactNode to React.ComponentType to allow it to be used as a JSX component. This resolves multiple type errors.
+const getToolProperties = (tool: EditorTool): { title: string, panel: React.ComponentType<any> | null } => {
+    switch (tool) {
+        case EditorTool.MOVE:
+            return {
+                title: "Size & position",
+                panel: MoveToolPanel
+            };
+        case EditorTool.GENERATIVE: return { title: "Generative", panel: null };
+        case EditorTool.ADJUST: return { title: "Adjust", panel: null };
+        case EditorTool.SELECT: return { title: "Select", panel: null };
+        case EditorTool.RETOUCH: return { title: "Retouch", panel: null };
+        case EditorTool.QUICK_ACTIONS: return { title: "Quick actions", panel: null };
+        case EditorTool.EFFECTS: return { title: "Effects", panel: null };
+        case EditorTool.PAINT: return { title: "Paint", panel: null };
+        case EditorTool.SHAPES: return { title: "Shapes", panel: null };
+        case EditorTool.TYPE: return { title: "Type", panel: null };
+        case EditorTool.ADD_IMAGE: return { title: "Add image", panel: null };
+        default:
+            return { title: "Properties", panel: null };
+    }
+};
+
 const MoveToolPanel: React.FC<Pick<PropertiesPanelProps, 'autoSelect' | 'onAutoSelectChange'>> = ({ autoSelect, onAutoSelectChange }) => {
 
     const alignButtons = [
@@ -68,28 +91,20 @@ const MoveToolPanel: React.FC<Pick<PropertiesPanelProps, 'autoSelect' | 'onAutoS
     )
 }
 
-const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ activeTool, autoSelect, onAutoSelectChange, onClose }) => {
+const PropertiesPanel: React.FC<PropertiesPanelProps> = (props) => {
+    const { activeTool, onClose } = props;
+    const { title, panel: PanelComponent } = getToolProperties(activeTool);
     
-    const renderContent = () => {
-        switch(activeTool) {
-            case EditorTool.MOVE:
-                return <MoveToolPanel autoSelect={autoSelect} onAutoSelectChange={onAutoSelectChange} />;
-            // Add other tool panels here in the future
-            default:
-                return <div className="text-gray-500 p-4 text-center">Select a tool to see its properties.</div>;
-        }
-    }
-
     return (
         <aside className="w-72 bg-[#2D2D2D] p-4 border-r border-black/20 flex flex-col space-y-4 flex-shrink-0">
             <header className="flex justify-between items-center">
-                <h2 className="font-semibold text-base">Size & position</h2>
+                <h2 className="font-semibold text-base">{title}</h2>
                 <button onClick={onClose} className="p-1 text-gray-400 hover:text-white rounded-md">
                     <Icon type="close" />
                 </button>
             </header>
             <div className="flex-1 space-y-4 overflow-y-auto pr-1">
-                {renderContent()}
+                {PanelComponent ? <PanelComponent {...props} /> : <div className="text-gray-500 p-4 text-center">Properties for this tool are coming soon.</div>}
             </div>
         </aside>
     );

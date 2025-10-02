@@ -204,7 +204,7 @@ const GenerativeFillPanel: React.FC = () => {
                   brushSize={brushSize}
                   brushOpacity={brushOpacity}
                   brushShape={brushShape}
-                  activeTool={EditorTool.BRUSH}
+                  activeTool={EditorTool.PAINT}
                   isLocked={false}
                   selectionRect={null}
                   onSelectionChange={() => {}}

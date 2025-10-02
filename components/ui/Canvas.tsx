@@ -169,7 +169,7 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
     };
 
     const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-        const isDrawingTool = [EditorTool.BRUSH, EditorTool.ERASER, EditorTool.FILL, EditorTool.TEXT, EditorTool.SHAPES].includes(activeTool);
+        const isDrawingTool = [EditorTool.PAINT, EditorTool.TYPE, EditorTool.SHAPES].includes(activeTool);
         
         if (isBackground && isDrawingTool) {
             onAttemptEditBackgroundLayer?.();
@@ -213,8 +213,7 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
 
 
         switch (activeTool) {
-            case EditorTool.BRUSH:
-            case EditorTool.ERASER:
+            case EditorTool.PAINT:
                 isDrawing.current = true;
                 lastPos.current = { x, y };
                 const drawCtx = getDrawingCtx();
@@ -225,17 +224,15 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
                         drawCtx.rect(selectionRect.x, selectionRect.y, selectionRect.width, selectionRect.height);
                         drawCtx.clip();
                     }
-                    drawCtx.globalCompositeOperation = activeTool === EditorTool.ERASER ? 'destination-out' : 'source-over';
+                    // For now, assume PAINT is brush. A future implementation could check for an 'eraser' sub-tool.
+                    drawCtx.globalCompositeOperation = 'source-over';
                     stamp(drawCtx, x, y);
                 }
                 break;
-            case EditorTool.FILL:
-                floodFill(Math.round(x), Math.round(y));
-                break;
-            case EditorTool.TEXT:
+            case EditorTool.TYPE:
                 setTextEdit({ x, y, value: '' });
                 break;
-            case EditorTool.SELECTION:
+            case EditorTool.SELECT:
             case EditorTool.SHAPES:
                 isDrawing.current = true;
                 shapeStartPos.current = { x, y };
@@ -265,8 +262,7 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
         const interactCtx = getInteractionCtx();
 
         switch (activeTool) {
-            case EditorTool.BRUSH:
-            case EditorTool.ERASER:
+            case EditorTool.PAINT:
                 if (!drawCtx || !lastPos.current) return;
                 
                 const dist = Math.hypot(x - lastPos.current.x, y - lastPos.current.y);
@@ -281,7 +277,7 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
                 stamp(drawCtx, x, y); // Ensure the end point is stamped
                 lastPos.current = { x, y };
                 break;
-            case EditorTool.SELECTION:
+            case EditorTool.SELECT:
                  if (shapeStartPos.current) {
                     const previewRect = {
                         x: Math.min(shapeStartPos.current.x, x),
@@ -307,7 +303,7 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
         if (isLocked) return;
         if (isMovingSelection.current && movingSelection.current) {
             const drawCtx = getDrawingCtx();
-            const { data, originalRect, startX, startY } = movingSelection.current;
+            const { data } = movingSelection.current;
             if (drawCtx && selectionRect) {
                 drawCtx.putImageData(data, selectionRect.x, selectionRect.y);
                 handleDrawEnd();
@@ -324,8 +320,7 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
         
         if (drawCtx) {
              switch (activeTool) {
-                case EditorTool.BRUSH:
-                case EditorTool.ERASER:
+                case EditorTool.PAINT:
                     drawCtx.restore(); // Restore context to remove clipping
                     handleDrawEnd();
                     break;
@@ -354,7 +349,7 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
                         handleDrawEnd();
                     }
                     break;
-                case EditorTool.SELECTION:
+                case EditorTool.SELECT:
                     onSelectionPreview(null);
                     if (shapeStartPos.current) {
                         const rect = drawingCanvasRef.current!.getBoundingClientRect();
@@ -393,18 +388,14 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
           case EditorTool.MOVE:
               canvas.style.cursor = 'move';
               break;
-          case EditorTool.SELECTION:
+          case EditorTool.SELECT:
           case EditorTool.SHAPES:
-          case EditorTool.CROP:
-          case EditorTool.TRANSFORM:
               canvas.style.cursor = 'crosshair';
               break;
-          case EditorTool.TEXT:
+          case EditorTool.TYPE:
               canvas.style.cursor = 'text';
               break;
-          case EditorTool.BRUSH:
-          case EditorTool.ERASER:
-          case EditorTool.FILL:
+          case EditorTool.PAINT:
               canvas.style.cursor = 'none'; // Use custom cursor from CanvasArea
               break;
           default:

@@ -9,18 +9,20 @@ export enum Tool {
 }
 
 /**
- * Defines the set of tools available within the main editor.
+ * Defines the set of tools available within the main editor, redesigned for a modern workflow.
  */
 export enum EditorTool {
   MOVE = 'MOVE',
-  SELECTION = 'SELECTION',
-  BRUSH = 'BRUSH',
-  ERASER = 'ERASER',
-  FILL = 'FILL',
-  TEXT = 'TEXT',
+  GENERATIVE = 'GENERATIVE',
+  ADJUST = 'ADJUST',
+  SELECT = 'SELECT',
+  RETOUCH = 'RETOUCH',
+  QUICK_ACTIONS = 'QUICK_ACTIONS',
+  EFFECTS = 'EFFECTS',
+  PAINT = 'PAINT',
   SHAPES = 'SHAPES',
-  TRANSFORM = 'TRANSFORM',
-  CROP = 'CROP',
+  TYPE = 'TYPE',
+  ADD_IMAGE = 'ADD_IMAGE',
 }
 
 export type AutoSelectType = 'Layer' | 'Group';

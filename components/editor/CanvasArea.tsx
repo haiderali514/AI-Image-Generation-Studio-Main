@@ -58,7 +58,7 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
-    if (e.ctrlKey || e.metaKey) { // Zooming with Ctrl/Cmd key
+    if (e.altKey) { // Zooming with Alt key
         const container = containerRef.current;
         if (!container) return;
 
