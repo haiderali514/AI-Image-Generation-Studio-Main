@@ -13,6 +13,7 @@ interface LayersPanelProps {
     onUpdateLayerProps: (id: string, props: Partial<Layer>) => void;
     onDuplicateLayer: () => void;
     onMergeDown: () => void;
+    onConvertBackground: () => void;
 }
 
 const LayerItem: React.FC<{
@@ -63,8 +64,9 @@ const LayerItem: React.FC<{
         >
             <button 
                 onClick={(e) => { e.stopPropagation(); onUpdate({ isVisible: !layer.isVisible }); }}
-                className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-white hover:bg-white/10"
-                title={layer.isVisible ? 'Hide layer' : 'Show layer'}
+                className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-white hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                title={layer.isBackground ? "Background layer cannot be hidden" : (layer.isVisible ? 'Hide layer' : 'Show layer')}
+                disabled={layer.isBackground}
             >
               <Icon type={layer.isVisible ? 'eye' : 'eye-off'} />
             </button>
@@ -88,8 +90,9 @@ const LayerItem: React.FC<{
             </div>
              <button 
                 onClick={(e) => { e.stopPropagation(); onUpdate({ isLocked: !layer.isLocked }); }}
-                className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-white hover:bg-white/10"
-                title={layer.isLocked ? 'Unlock layer' : 'Lock layer'}
+                className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-white hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                title={layer.isBackground ? "Background layer is always locked" : (layer.isLocked ? 'Unlock layer' : 'Lock layer')}
+                disabled={layer.isBackground}
             >
               <Icon type={layer.isLocked ? 'lock' : 'unlock'} />
             </button>
@@ -98,7 +101,7 @@ const LayerItem: React.FC<{
 };
 
 const LayersPanel: React.FC<LayersPanelProps> = (props) => {
-    const { layers, activeLayerId, onSelectLayer, onAddLayer, onDeleteLayer, onUpdateLayerProps, onDuplicateLayer, onMergeDown } = props;
+    const { layers, activeLayerId, onSelectLayer, onAddLayer, onDeleteLayer, onUpdateLayerProps, onDuplicateLayer, onMergeDown, onConvertBackground } = props;
     const activeLayer = layers.find(l => l.id === activeLayerId);
 
     const blendModeOptions: {value: BlendMode, label: string}[] = [
@@ -140,9 +143,9 @@ const LayersPanel: React.FC<LayersPanelProps> = (props) => {
             <div className="p-2 flex flex-col flex-1 overflow-hidden">
                 <div className="p-2 space-y-3">
                     <div className="grid grid-cols-2 gap-4">
-                        <Select label="Blend" options={blendModeOptions} value={activeLayer?.blendMode ?? 'normal'} onChange={handleBlendModeChange}/>
+                        <Select label="Blend" options={blendModeOptions} value={activeLayer?.blendMode ?? 'normal'} onChange={handleBlendModeChange} disabled={!activeLayer || !!activeLayer.isBackground}/>
                         <div className="relative">
-                            <label className="block text-xs font-medium text-gray-400 mb-1">Opacity</label>
+                            <label className={`block text-xs font-medium mb-1 ${!activeLayer || activeLayer.isBackground ? 'text-gray-500' : 'text-gray-400'}`}>Opacity</label>
                             <input
                                 type="number"
                                 value={activeLayer ? Math.round(activeLayer.opacity * 100) : 100}
@@ -153,11 +156,23 @@ const LayersPanel: React.FC<LayersPanelProps> = (props) => {
                                         onUpdateLayerProps(activeLayer.id, { opacity: val / 100 });
                                     }
                                 }}
-                                className="w-full p-2 bg-[#1E1E1E] border border-gray-700 rounded-md focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                className="w-full p-2 bg-[#1E1E1E] border border-gray-700 rounded-md focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:bg-gray-800/50 disabled:cursor-not-allowed disabled:text-gray-500"
+                                disabled={!activeLayer || !!activeLayer.isBackground}
                             />
                         </div>
                     </div>
                 </div>
+                
+                {activeLayer?.isBackground && (
+                    <div className="px-2 pb-2">
+                        <div className="p-3 bg-black/20 rounded-md text-xs text-gray-400 space-y-3">
+                            <p>The Background layer is special. You can't move it, hide it, or change its blending options. To get full access, convert it to a normal layer.</p>
+                            <button onClick={onConvertBackground} className="w-full text-center text-sm py-1.5 bg-gray-700 hover:bg-gray-600 rounded-md text-white font-semibold">
+                                Convert to Layer
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 <div className="flex-1 p-2 space-y-1 overflow-y-auto bg-black/10 rounded-md">
                     {reversedLayers.map(layer => (
@@ -181,7 +196,7 @@ const LayersPanel: React.FC<LayersPanelProps> = (props) => {
                     <button onClick={onAddLayer} className="p-1.5 hover:text-white rounded-md" title="Add new layer">
                         <Icon type="plus-square" />
                     </button>
-                    <button onClick={onDeleteLayer} disabled={layers.length <= 1 || activeLayer?.isBackground} className="p-1.5 hover:text-white rounded-md disabled:opacity-40" title="Delete layer">
+                    <button onClick={onDeleteLayer} disabled={layers.length <= 1 || !!activeLayer?.isBackground} className="p-1.5 hover:text-white rounded-md disabled:opacity-40" title="Delete layer">
                         <Icon type="trash" />
                     </button>
                  </div>

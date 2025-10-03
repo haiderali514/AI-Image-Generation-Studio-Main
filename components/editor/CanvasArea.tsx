@@ -59,7 +59,7 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
     const container = containerRef.current;
     if (!container) return;
 
-    if (e.ctrlKey || e.metaKey) { // Zooming with Ctrl/Cmd key
+    if (e.altKey) { // Zooming with Alt key
         const rect = container.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
         const mouseY = e.clientY - rect.top;
@@ -169,7 +169,7 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
       onMouseLeave={handleMouseUp}
     >
       <div
-        className="relative transition-transform duration-75 ease-out"
+        className="relative transition-transform duration-150 ease-out"
         style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
       >
         <div className="shadow-2xl bg-black relative" style={{ width: documentSettings.width, height: documentSettings.height }}>

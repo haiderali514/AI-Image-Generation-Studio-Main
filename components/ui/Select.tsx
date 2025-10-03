@@ -12,9 +12,10 @@ interface SelectProps {
   value: string;
   onChange: (value: string) => void;
   label?: string;
+  disabled?: boolean;
 }
 
-const Select: React.FC<SelectProps> = ({ options, value, onChange, label }) => {
+const Select: React.FC<SelectProps> = ({ options, value, onChange, label, disabled = false }) => {
   const [isOpen, setIsOpen] = useState(false);
   const selectRef = useRef<HTMLDivElement>(null);
 
@@ -37,19 +38,24 @@ const Select: React.FC<SelectProps> = ({ options, value, onChange, label }) => {
     setIsOpen(false);
   };
 
+  const baseClasses = "w-full flex items-center justify-between p-2 bg-[#1E1E1E] border border-gray-700 rounded-md text-left";
+  const activeClasses = "focus:bg-gray-900/0 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none";
+  const disabledClasses = "disabled:bg-gray-800/50 disabled:cursor-not-allowed";
+
   return (
     <div className="relative w-full" ref={selectRef}>
-      {label && <label className="block text-sm font-medium text-gray-400 mb-1">{label}</label>}
+      {label && <label className={`block text-sm font-medium mb-1 ${disabled ? 'text-gray-500' : 'text-gray-400'}`}>{label}</label>}
       <button
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between p-2 bg-[#1E1E1E] border border-gray-700 rounded-md focus:bg-gray-900/0 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none text-left"
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        className={`${baseClasses} ${activeClasses} ${disabledClasses}`}
+        disabled={disabled}
       >
-        <span className="text-gray-200">{selectedOption?.label}</span>
-        <Icon type="chevron-down" className="text-gray-400" />
+        <span className={disabled ? 'text-gray-500' : 'text-gray-200'}>{selectedOption?.label}</span>
+        <Icon type="chevron-down" className={`text-gray-400 ${disabled ? 'text-gray-600' : ''}`} />
       </button>
 
-      {isOpen && (
+      {isOpen && !disabled && (
         <div className="absolute z-10 mt-1 w-full bg-[#3a3a3a] border border-black/50 rounded-md shadow-lg py-1">
           {options.map(option => (
             <button

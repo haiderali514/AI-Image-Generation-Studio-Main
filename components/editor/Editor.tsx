@@ -21,7 +21,8 @@ interface EditorProps {
 const MAX_ZOOM = 32; // 3200%
 const MIN_ZOOM = 0.05; // 5%
 
-const Editor: React.FC<EditorProps> = ({ document: documentSettings, onClose, onNew, initialFile }) => {
+const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onClose, onNew, initialFile }) => {
+  const [docSettings, setDocSettings] = useState(initialDocumentSettings);
   const [activeTool, setActiveTool] = useState<EditorTool>(EditorTool.MOVE);
   const [zoom, setZoom] = useState(1);
   const [selection, setSelection] = useState<{ rect: { x: number; y: number; width: number; height: number; } } | null>(null);
@@ -53,15 +54,15 @@ const Editor: React.FC<EditorProps> = ({ document: documentSettings, onClose, on
   useEffect(() => {
     const init = async () => {
         let initialImageData: ImageData | null = null;
-        if (documentSettings.background !== 'Transparent') {
+        if (initialDocumentSettings.background !== 'Transparent') {
             const canvas = document.createElement('canvas');
-            canvas.width = documentSettings.width;
-            canvas.height = documentSettings.height;
+            canvas.width = initialDocumentSettings.width;
+            canvas.height = initialDocumentSettings.height;
             const ctx = canvas.getContext('2d');
             if (ctx) {
-                ctx.fillStyle = documentSettings.background === 'Custom' ? documentSettings.customBgColor : documentSettings.background.toLowerCase();
-                ctx.fillRect(0, 0, documentSettings.width, documentSettings.height);
-                initialImageData = ctx.getImageData(0, 0, documentSettings.width, documentSettings.height);
+                ctx.fillStyle = initialDocumentSettings.background === 'Custom' ? initialDocumentSettings.customBgColor : initialDocumentSettings.background.toLowerCase();
+                ctx.fillRect(0, 0, initialDocumentSettings.width, initialDocumentSettings.height);
+                initialImageData = ctx.getImageData(0, 0, initialDocumentSettings.width, initialDocumentSettings.height);
             }
         }
 
@@ -82,7 +83,7 @@ const Editor: React.FC<EditorProps> = ({ document: documentSettings, onClose, on
 
         if (initialFile) {
             const base64 = await fileToBase64(initialFile);
-            const imageData = await base64ToImageData(base64, documentSettings.width, documentSettings.height);
+            const imageData = await base64ToImageData(base64, initialDocumentSettings.width, initialDocumentSettings.height);
             const imageLayer: Layer = {
                 id: crypto.randomUUID(),
                 name: initialFile.name.split('.').slice(0, -1).join('.') || 'Layer 1',
@@ -102,7 +103,7 @@ const Editor: React.FC<EditorProps> = ({ document: documentSettings, onClose, on
         setActiveLayerId(initialActiveId);
     };
     init();
-  }, [documentSettings, initialFile]);
+  }, [initialDocumentSettings, initialFile]);
 
   
   useEffect(() => {
@@ -206,8 +207,8 @@ const Editor: React.FC<EditorProps> = ({ document: documentSettings, onClose, on
     const bottomLayer = currentLayers[activeIndex - 1];
 
     const canvas = document.createElement('canvas');
-    canvas.width = documentSettings.width;
-    canvas.height = documentSettings.height;
+    canvas.width = docSettings.width;
+    canvas.height = docSettings.height;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
@@ -217,12 +218,12 @@ const Editor: React.FC<EditorProps> = ({ document: documentSettings, onClose, on
         ctx.globalCompositeOperation = topLayer.blendMode === 'normal' ? 'source-over' : topLayer.blendMode;
         
         const topCanvas = document.createElement('canvas');
-        topCanvas.width = documentSettings.width;
-        topCanvas.height = documentSettings.height;
+        topCanvas.width = docSettings.width;
+        topCanvas.height = docSettings.height;
         topCanvas.getContext('2d')?.putImageData(topLayer.imageData, 0, 0);
         ctx.drawImage(topCanvas, 0, 0);
     }
-    const mergedImageData = ctx.getImageData(0, 0, documentSettings.width, documentSettings.height);
+    const mergedImageData = ctx.getImageData(0, 0, docSettings.width, docSettings.height);
     const mergedLayer: Layer = {
         ...bottomLayer,
         imageData: mergedImageData,
@@ -251,24 +252,30 @@ const Editor: React.FC<EditorProps> = ({ document: documentSettings, onClose, on
 
   const handleAttemptEditBackground = () => setIsBgConvertModalOpen(true);
 
-  const handleConfirmConvertToLayer = () => {
-    const newLayers = currentLayers.map(l => l.isBackground ? { ...l, name: 'Layer 0', isLocked: false, isBackground: false } : l);
+  const convertBackgroundToLayer = () => {
+    const newLayers = currentLayers.map(l => 
+        l.isBackground ? { ...l, name: 'Layer 0', isLocked: false, isBackground: false } : l
+    );
     commit(newLayers);
+  };
+
+  const handleConfirmConvertToLayer = () => {
+    convertBackgroundToLayer();
     setIsBgConvertModalOpen(false);
   };
 
   const handleExport = (format: ExportFormat, quality?: number) => {
     const compositeCanvas = document.createElement('canvas');
-    compositeCanvas.width = documentSettings.width;
-    compositeCanvas.height = documentSettings.height;
+    compositeCanvas.width = docSettings.width;
+    compositeCanvas.height = docSettings.height;
     const ctx = compositeCanvas.getContext('2d');
     if (!ctx) return;
 
     currentLayers.forEach(layer => {
       if (layer.isVisible && layer.imageData) {
         const layerCanvas = document.createElement('canvas');
-        layerCanvas.width = documentSettings.width;
-        layerCanvas.height = documentSettings.height;
+        layerCanvas.width = docSettings.width;
+        layerCanvas.height = docSettings.height;
         const layerCtx = layerCanvas.getContext('2d');
         if (layerCtx) {
           layerCtx.putImageData(layer.imageData, 0, 0);
@@ -283,13 +290,13 @@ const Editor: React.FC<EditorProps> = ({ document: documentSettings, onClose, on
     const link = document.createElement('a');
     link.href = dataUrl;
     const extension = format.split('/')[1];
-    link.download = `${documentSettings.name}.${extension}`;
+    link.download = `${docSettings.name}.${extension}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  const handleSaveProject = () => saveProject(documentSettings, currentLayers);
+  const handleSaveProject = () => saveProject(docSettings, currentLayers);
   
   const handleOpenProjectClick = () => fileInputRef.current?.click();
 
@@ -298,15 +305,13 @@ const Editor: React.FC<EditorProps> = ({ document: documentSettings, onClose, on
     if (file) {
         try {
             const { documentSettings: newDoc, layers: newLayers } = await loadProject(file);
-            // This is a destructive action, replacing the current project.
-            // A more complex app might ask for confirmation.
+            // Update document settings state and reset history with loaded project
+            setDocSettings(newDoc);
             setHistory([newLayers]);
             setHistoryIndex(0);
             setActiveLayerId(newLayers[newLayers.length - 1]?.id ?? null);
-            // The document settings are part of the project, but we don't have a way to update them in App.tsx from here.
-            // For now, we assume the user stays within the same canvas size. A full implementation would need to communicate this up.
-            console.log("Project loaded. Note: document settings (like canvas size) are not dynamically updated in this version.");
-
+            setZoom(1); // Reset zoom for new project
+            setSelection(null); // Clear selection from old project
         } catch (error) {
             alert('Error loading project file. It may be invalid.');
             console.error(error);
@@ -323,7 +328,7 @@ const Editor: React.FC<EditorProps> = ({ document: documentSettings, onClose, on
     <div className="flex flex-col h-screen bg-[#181818] text-gray-300 font-sans text-sm">
       <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".aips" className="hidden" />
       <EditorHeader
-        documentName={documentSettings.name}
+        documentName={docSettings.name}
         onClose={onClose} onNew={onNew} onSaveAs={() => setIsExportModalOpen(true)}
         onSaveProject={handleSaveProject} onOpenProject={handleOpenProjectClick}
         canUndo={canUndo} canRedo={canRedo} onUndo={handleUndo} onRedo={handleRedo}
@@ -340,10 +345,11 @@ const Editor: React.FC<EditorProps> = ({ document: documentSettings, onClose, on
         )}
         <main className="flex-1 flex flex-col bg-[#181818] overflow-hidden">
           <CanvasArea
-            document={documentSettings} layers={currentLayers} activeLayerId={activeLayerId}
+            document={docSettings} layers={currentLayers} activeLayerId={activeLayerId}
             activeTool={activeTool} zoom={zoom} onZoom={handleZoom}
             selection={selection} onSelectionChange={handleSelectionChange}
-            selectionPreview={selectionPreview} onSelectionPreview={onSelectionPreview}
+            selectionPreview={selectionPreview}
+            onSelectionPreview={onSelectionPreview}
             onDrawEnd={handleDrawEnd} onAttemptEditBackgroundLayer={handleAttemptEditBackground}
             foregroundColor="#000" brushSize={10} brushOpacity={1} brushHardness={1}
             brushShape="round" fontFamily="sans-serif" fontSize={12} textAlign="left"
@@ -354,6 +360,7 @@ const Editor: React.FC<EditorProps> = ({ document: documentSettings, onClose, on
           onSelectLayer={setActiveLayerId} onAddLayer={handleAddLayer}
           onDeleteLayer={handleDeleteLayer} onUpdateLayerProps={handleUpdateLayerProps}
           onDuplicateLayer={handleDuplicateLayer} onMergeDown={handleMergeDown}
+          onConvertBackground={convertBackgroundToLayer}
         />
       </div>
       <ConfirmModal
@@ -365,7 +372,7 @@ const Editor: React.FC<EditorProps> = ({ document: documentSettings, onClose, on
       </ConfirmModal>
       <ExportModal
         isOpen={isExportModalOpen} onClose={() => setIsExportModalOpen(false)}
-        onExport={handleExport} documentName={documentSettings.name}
+        onExport={handleExport} documentName={docSettings.name}
       />
     </div>
   );
