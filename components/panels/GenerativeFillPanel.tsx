@@ -1,5 +1,4 @@
 
-
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import Button from '../ui/Button';
 import Spinner from '../ui/Spinner';
@@ -8,14 +7,10 @@ import ImageUpload from '../ui/ImageUpload';
 import * as geminiService from '../../services/geminiService';
 import { fileToBase64 } from '../../utils/imageUtils';
 import Icon from '../ui/Icon';
-// FIX: Import EditorTool to use for the Canvas component's activeTool prop.
-import { Tool, EditorTool } from '../../types';
+import { Tool, EditorTool, BrushShape } from '../../types';
 
 const CANVAS_SIZE = 512;
 const MASK_COLOR = "#FF00FF"; // Bright pink for masking
-// FIX: Aligned BrushShape with the type in Canvas.tsx to resolve type error.
-type BrushShape = 'round' | 'square';
-
 
 const GenerativeFillPanel: React.FC = () => {
   const [uploadedImage, setUploadedImage] = useState<File | null>(null);
@@ -32,7 +27,6 @@ const GenerativeFillPanel: React.FC = () => {
   const [isSuggesting, setIsSuggesting] = useState<boolean>(false);
   const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
 
-  // FIX: Implement local history management for undo/redo functionality
   const [history, setHistory] = useState<(ImageData | null)[]>([null]);
   const [historyIndex, setHistoryIndex] = useState(0);
 
@@ -192,14 +186,12 @@ const GenerativeFillPanel: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 flex-1">
         <div className="flex flex-col space-y-4 items-center">
             <h2 className="text-2xl font-bold text-indigo-400 self-start">Mask Your Image</h2>
-            {/* FIX: Wrap Canvas to display background image and pass correct props */}
             <div className="relative w-full max-w-[512px] h-[512px] bg-gray-900">
                 <img src={imageBase64} alt="Background for masking" className="absolute inset-0 w-full h-full object-contain pointer-events-none"/>
                 <Canvas
                   ref={canvasRef}
                   width={CANVAS_SIZE}
                   height={CANVAS_SIZE}
-                  // FIX: Changed 'brushColor' to 'foregroundColor' to match CanvasProps and added missing text-related props.
                   foregroundColor={MASK_COLOR}
                   brushSize={brushSize}
                   brushOpacity={brushOpacity}
@@ -208,7 +200,6 @@ const GenerativeFillPanel: React.FC = () => {
                   isLocked={false}
                   selectionRect={null}
                   onSelectionChange={() => {}}
-                  // FIX: Add missing 'onSelectionPreview' prop.
                   onSelectionPreview={() => {}}
                   imageDataToRender={history[historyIndex]}
                   onDrawEnd={handleDrawEnd}

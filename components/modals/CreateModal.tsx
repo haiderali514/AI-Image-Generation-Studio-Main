@@ -13,7 +13,7 @@ import Select from '../ui/Select';
 interface CreateModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreate: (settings: DocumentSettings) => void;
+  onCreate: (settings: DocumentSettings, file?: File) => void;
 }
 
 const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose, onCreate }) => {
@@ -83,10 +83,28 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose, onCreate }) 
   }, [onClose]);
 
   const handleImageUpload = useCallback(async (file: File) => {
-    // A future implementation would open the editor with this image
-    console.log("Uploaded file:", file.name);
-    handleToolSelect(Tool.GENERATIVE_FILL);
-  }, [handleToolSelect]);
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const settings: DocumentSettings = {
+        name: file.name.split('.').slice(0, -1).join('.') || 'Untitled',
+        width: img.width,
+        height: img.height,
+        units: 'Pixels',
+        resolution: 72,
+        resolutionUnit: 'ppi',
+        background: 'Transparent',
+        customBgColor: '#FFFFFF',
+      };
+      onCreate(settings, file);
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => {
+        alert("Could not load image file.");
+        URL.revokeObjectURL(url);
+    }
+    img.src = url;
+  }, [onCreate]);
   
   const handleCreateCustom = () => {
     onCreate(docSettings);

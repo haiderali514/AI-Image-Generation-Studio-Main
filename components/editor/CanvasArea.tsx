@@ -1,5 +1,4 @@
 
-
 import React, { useState, useRef, useEffect } from 'react';
 import { EditorTool, DocumentSettings, Layer, BrushShape, TextAlign } from '../../types';
 import Canvas from '../ui/Canvas';
@@ -34,14 +33,13 @@ interface CanvasAreaProps {
 }
 
 const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
-  const { document, layers, activeLayerId, activeTool, zoom, onZoom, selection, onSelectionChange, selectionPreview, onSelectionPreview, onDrawEnd, onAttemptEditBackgroundLayer, ...toolProps } = props;
+  const { document: documentSettings, layers, activeLayerId, activeTool, zoom, onZoom, selection, onSelectionChange, selectionPreview, onSelectionPreview, onDrawEnd, onAttemptEditBackgroundLayer, ...toolProps } = props;
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const panStart = useRef({ x: 0, y: 0 });
   const isPanning = useRef(false);
   const selectionCanvasRef = useRef<HTMLCanvasElement>(null);
   const marchOffset = useRef(0);
-  // FIX: The `useRef` hook must be called with an initial value to prevent a runtime error.
   const animationFrameId = useRef<number | undefined>(undefined);
 
   useEffect(() => {
@@ -49,19 +47,19 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
     const container = containerRef.current;
     if (container) {
         const { clientWidth, clientHeight } = container;
-        const initialPanX = (clientWidth - document.width * zoom) / 2;
-        const initialPanY = (clientHeight - document.height * zoom) / 2;
+        const initialPanX = (clientWidth - documentSettings.width * zoom) / 2;
+        const initialPanY = (clientHeight - documentSettings.height * zoom) / 2;
         setPan({ x: initialPanX, y: initialPanY });
     }
-  }, [document.width, document.height]); // Only run once on document change
+  }, [documentSettings.width, documentSettings.height]); // Only run once on document change
 
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
-    if (e.altKey) { // Zooming with Alt key
-        const container = containerRef.current;
-        if (!container) return;
+    const container = containerRef.current;
+    if (!container) return;
 
+    if (e.ctrlKey || e.metaKey) { // Zooming with Ctrl/Cmd key
         const rect = container.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
         const mouseY = e.clientY - rect.top;
@@ -150,9 +148,10 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
     };
   }, [selection, selectionPreview, zoom]);
   
-  const docBg = document.background === 'Custom' ? document.customBgColor : document.background.toLowerCase();
+  const docBg = documentSettings.background === 'Custom' ? documentSettings.customBgColor : documentSettings.background.toLowerCase();
   
-  const showTransformControls = activeTool === EditorTool.MOVE && layers.find(l => l.id === activeLayerId)?.history[layers.find(l => l.id === activeLayerId)?.historyIndex ?? 0] !== null;
+  const activeLayer = layers.find(l => l.id === activeLayerId);
+  const showTransformControls = activeTool === EditorTool.MOVE && activeLayer && activeLayer.imageData !== null && !activeLayer.isBackground;
 
   return (
     <div 
@@ -173,29 +172,21 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
         className="relative transition-transform duration-75 ease-out"
         style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
       >
-        <div className="shadow-2xl bg-black relative" style={{ width: document.width, height: document.height }}>
-            <div 
-              className="absolute top-0 left-0 w-full h-full"
-              style={{
-                 backgroundColor: docBg === 'transparent' ? '#ccc' : docBg,
-                 backgroundImage: docBg === 'transparent' ? 'repeating-conic-gradient(#fff 0 25%, transparent 0 50%)' : 'none',
-                 backgroundSize: '20px 20px',
-              }}
-            />
+        <div className="shadow-2xl bg-black relative" style={{ width: documentSettings.width, height: documentSettings.height }}>
             
             {layers.map(layer => (
                 <div key={layer.id}
                      style={{
                         display: layer.isVisible ? 'block' : 'none',
-                        opacity: layer.opacity,
-                        mixBlendMode: layer.blendMode,
+                        opacity: layer.isBackground ? 1 : layer.opacity, // Background doesn't have opacity control
+                        mixBlendMode: layer.isBackground ? 'normal' : layer.blendMode,
                         pointerEvents: (layer.id === activeLayerId && !isPanning.current) ? 'auto' : 'none'
                      }}
                      className="absolute top-0 left-0 w-full h-full"
                 >
                     <Canvas
-                        width={document.width}
-                        height={document.height}
+                        width={documentSettings.width}
+                        height={documentSettings.height}
                         activeTool={activeTool}
                         isLocked={layer.isLocked}
                         isBackground={layer.isBackground}
@@ -203,7 +194,7 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
                         selectionRect={selection?.rect || null}
                         onSelectionChange={onSelectionChange}
                         onSelectionPreview={onSelectionPreview}
-                        imageDataToRender={layer.history[layer.historyIndex] ?? null}
+                        imageDataToRender={layer.imageData}
                         onDrawEnd={onDrawEnd}
                         zoom={zoom}
                         {...toolProps}
@@ -212,11 +203,11 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
             ))}
              <canvas
               ref={selectionCanvasRef}
-              width={document.width}
-              height={document.height}
+              width={documentSettings.width}
+              height={documentSettings.height}
               className="absolute top-0 left-0 pointer-events-none"
             />
-            {showTransformControls && <TransformControls width={document.width} height={document.height} zoom={zoom} />}
+            {showTransformControls && <TransformControls width={documentSettings.width} height={documentSettings.height} zoom={zoom} />}
         </div>
       </div>
       {showTransformControls && <FloatingActionBar />}

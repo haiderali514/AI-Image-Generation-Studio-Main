@@ -66,9 +66,7 @@ export interface Layer {
   opacity: number; // 0-1
   blendMode: BlendMode;
   thumbnail?: string;
-  // History for this layer
-  history: (ImageData | null)[]; // Use null for initial empty state
-  historyIndex: number;
+  imageData: ImageData | null;
 }
 
 /**
@@ -80,3 +78,20 @@ export type TextAlign = 'left' | 'center' | 'right';
  * Defines the possible shapes for the brush tip.
  */
 export type BrushShape = 'round' | 'square';
+
+// --- Project Save/Load Types ---
+
+/**
+ * A version of the Layer type where image data is serialized to a base64 string.
+ */
+export interface SerializedLayer extends Omit<Layer, 'imageData' | 'thumbnail'> {
+  imageData: string | null; // base64 string
+}
+
+/**
+ * The structure of the saved project file.
+ */
+export interface ProjectFile {
+  documentSettings: DocumentSettings;
+  layers: SerializedLayer[];
+}

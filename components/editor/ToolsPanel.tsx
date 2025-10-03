@@ -20,13 +20,10 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ activeTool }) => {
         switch (activeTool) {
             case EditorTool.MOVE:
                 return { title: "Move Tool", description: "Pan the canvas, or click and drag a selection to move it." };
-            // FIX: Property 'SELECTION' does not exist on type 'typeof EditorTool'. Did you mean 'SELECT'?
             case EditorTool.SELECT:
                 return { title: "Selection Tool", description: "Click and drag to create a rectangular selection." };
-            // FIX: Property 'BRUSH' does not exist on type 'typeof EditorTool'.
             case EditorTool.PAINT:
                 return { title: "Brush Tool", description: "Use the top toolbar to adjust brush size, hardness, and opacity." };
-            // FIX: Property 'TEXT' does not exist on type 'typeof EditorTool'.
             case EditorTool.TYPE:
                 return { title: "Text Tool", description: "Use the top toolbar to adjust font, size, and alignment." };
             case EditorTool.SHAPES:

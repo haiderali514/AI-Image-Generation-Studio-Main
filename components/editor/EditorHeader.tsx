@@ -8,6 +8,8 @@ interface EditorHeaderProps {
   onClose: () => void;
   onNew: () => void;
   onSaveAs: () => void;
+  onSaveProject: () => void;
+  onOpenProject: () => void;
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
@@ -58,7 +60,7 @@ const ZoomDropdown: React.FC<{ zoom: number; onZoomChange: (zoom: number) => voi
 };
 
 const EditorHeader: React.FC<EditorHeaderProps> = (props) => {
-  const { documentName, onClose, onNew, onSaveAs, canUndo, canRedo, onUndo, onRedo, zoom, onZoomChange } = props;
+  const { documentName, onClose, onNew, onSaveAs, onSaveProject, onOpenProject, canUndo, canRedo, onUndo, onRedo, zoom, onZoomChange } = props;
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -84,6 +86,8 @@ const EditorHeader: React.FC<EditorHeaderProps> = (props) => {
                     onBackToHome={onClose}
                     onNew={onNew}
                     onSaveAs={onSaveAs}
+                    onSaveProject={onSaveProject}
+                    onOpenProject={onOpenProject}
                 />
             )}
         </div>
@@ -93,10 +97,10 @@ const EditorHeader: React.FC<EditorHeaderProps> = (props) => {
       </div>
 
       <div className="flex items-center space-x-3 text-gray-400">
-        <button onClick={onUndo} disabled={!canUndo} className="p-1.5 rounded-md hover:bg-[#363636] disabled:opacity-40" title="Undo">
+        <button onClick={onUndo} disabled={!canUndo} className="p-1.5 rounded-md hover:bg-[#363636] disabled:opacity-40" title="Undo (Ctrl+Z)">
           <Icon type="undo" />
         </button>
-        <button onClick={onRedo} disabled={!canRedo} className="p-1.5 rounded-md hover:bg-[#363636] disabled:opacity-40" title="Redo">
+        <button onClick={onRedo} disabled={!canRedo} className="p-1.5 rounded-md hover:bg-[#363636] disabled:opacity-40" title="Redo (Ctrl+Shift+Z)">
           <Icon type="redo" />
         </button>
         <div className="w-px h-6 bg-gray-600/50 mx-1" />
@@ -112,7 +116,7 @@ const EditorHeader: React.FC<EditorHeaderProps> = (props) => {
           Invite
         </button>
         <button onClick={onSaveAs} className="px-4 py-1.5 text-sm font-semibold rounded-md bg-[#2F6FEF] text-white hover:bg-blue-500">
-          Download
+          Export
         </button>
         <button className="p-2 rounded-md hover:bg-[#363636]" title="Share">
           <Icon type="share" />

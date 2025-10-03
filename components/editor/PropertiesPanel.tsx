@@ -1,5 +1,4 @@
 
-
 import React from 'react';
 import { EditorTool, AutoSelectType } from '../../types';
 import Icon from '../ui/Icon';
@@ -12,7 +11,6 @@ interface PropertiesPanelProps {
     onClose: () => void;
 }
 
-// FIX: Change panel type from React.ReactNode to React.ComponentType to allow it to be used as a JSX component. This resolves multiple type errors.
 const getToolProperties = (tool: EditorTool): { title: string, panel: React.ComponentType<any> | null } => {
     switch (tool) {
         case EditorTool.MOVE:

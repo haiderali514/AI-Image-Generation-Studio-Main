@@ -6,6 +6,8 @@ interface FileMenuProps {
   onBackToHome: () => void;
   onNew: () => void;
   onSaveAs: () => void;
+  onSaveProject: () => void;
+  onOpenProject: () => void;
 }
 
 const MenuItem: React.FC<{
@@ -36,7 +38,7 @@ const MenuItem: React.FC<{
   );
 };
 
-const FileMenu: React.FC<FileMenuProps> = ({ onBackToHome, onNew, onSaveAs }) => {
+const FileMenu: React.FC<FileMenuProps> = ({ onBackToHome, onNew, onSaveAs, onSaveProject, onOpenProject }) => {
   const subMenuItems = ['Document', 'Edit', 'Image', 'Layer', 'Select', 'View'];
 
   return (
@@ -48,10 +50,13 @@ const FileMenu: React.FC<FileMenuProps> = ({ onBackToHome, onNew, onSaveAs }) =>
         Back to home
       </button>
       <div className="pt-1 space-y-1">
-        <MenuItem label="New..." onClick={onNew} icon={<Icon type="crown" />} />
-        <MenuItem label="Open..." disabled />
-        <MenuItem label="Save to the cloud" shortcut="Ctrl + S" disabled />
-        <MenuItem label="Save as..." onClick={onSaveAs} />
+        <MenuItem label="New..." onClick={onNew} shortcut="Ctrl+N" />
+        <MenuItem label="Open Project..." onClick={onOpenProject} shortcut="Ctrl+O"/>
+      </div>
+       <hr className="border-t border-white/10 my-1" />
+       <div className="space-y-1">
+        <MenuItem label="Save Project" onClick={onSaveProject} shortcut="Ctrl+S" />
+        <MenuItem label="Export as..." onClick={onSaveAs} shortcut="Ctrl+E" />
         <MenuItem label="Invite people..." disabled />
       </div>
       <hr className="border-t border-white/10 my-1" />

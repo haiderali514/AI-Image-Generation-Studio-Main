@@ -11,6 +11,8 @@ interface LayersPanelProps {
     onAddLayer: () => void;
     onDeleteLayer: () => void;
     onUpdateLayerProps: (id: string, props: Partial<Layer>) => void;
+    onDuplicateLayer: () => void;
+    onMergeDown: () => void;
 }
 
 const LayerItem: React.FC<{
@@ -84,15 +86,19 @@ const LayerItem: React.FC<{
                     <p className={`text-sm truncate ${layer.isBackground ? 'italic text-gray-300' : 'text-gray-200'}`}>{layer.name}</p>
                 )}
             </div>
-            <button className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-white hover:bg-white/10" title="Layer options">
-              <Icon type="layer-options" />
+             <button 
+                onClick={(e) => { e.stopPropagation(); onUpdate({ isLocked: !layer.isLocked }); }}
+                className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-white hover:bg-white/10"
+                title={layer.isLocked ? 'Unlock layer' : 'Lock layer'}
+            >
+              <Icon type={layer.isLocked ? 'lock' : 'unlock'} />
             </button>
         </div>
     );
 };
 
 const LayersPanel: React.FC<LayersPanelProps> = (props) => {
-    const { layers, activeLayerId, onSelectLayer, onAddLayer, onDeleteLayer, onUpdateLayerProps } = props;
+    const { layers, activeLayerId, onSelectLayer, onAddLayer, onDeleteLayer, onUpdateLayerProps, onDuplicateLayer, onMergeDown } = props;
     const activeLayer = layers.find(l => l.id === activeLayerId);
 
     const blendModeOptions: {value: BlendMode, label: string}[] = [
@@ -116,6 +122,9 @@ const LayersPanel: React.FC<LayersPanelProps> = (props) => {
     }
 
     const reversedLayers = [...layers].reverse();
+    const activeLayerIndex = activeLayerId ? reversedLayers.findIndex(l => l.id === activeLayerId) : -1;
+    const canMergeDown = activeLayerIndex < reversedLayers.length - 1;
+
 
     return (
         <aside className="w-[300px] bg-[#2D2D2D] flex flex-col border-l border-black/20">
@@ -125,7 +134,6 @@ const LayersPanel: React.FC<LayersPanelProps> = (props) => {
                     <Icon type="info" className="text-gray-500"/>
                 </div>
                 <div className="flex items-center text-gray-400">
-                    <button className="p-2 hover:text-white rounded-md"><Icon type="close" /></button>
                     <button className="p-2 hover:text-white rounded-md"><Icon type="layers" /></button>
                 </div>
             </header>
@@ -162,33 +170,22 @@ const LayersPanel: React.FC<LayersPanelProps> = (props) => {
                         />
                     ))}
                 </div>
-                 <div className="flex items-center justify-between p-2 mt-2 border-t border-black/20 bg-black/10 rounded-md">
-                    <div className="flex items-center text-gray-400 space-x-1">
-                        {/* Placeholder icons from screenshot */}
-                        <button className="p-1.5 hover:text-white rounded-md" title="Filter"><Icon type="layer-options"/></button>
-                        <button className="p-1.5 hover:text-white rounded-md" title="Mask"><Icon type="color-pop"/></button>
-                        <button className="p-1.5 hover:text-white rounded-md" title="Adjustment Layer"><Icon type="shapes"/></button>
-                    </div>
-                    <div className="flex items-center text-gray-400 space-x-1">
-                        <button className="p-1.5 hover:text-white rounded-md" title="New Group"><Icon type="files"/></button>
-                        <button onClick={onAddLayer} className="p-1.5 hover:text-white rounded-md" title="Add new layer">
-                            <Icon type="plus-square" />
-                        </button>
-                        <button onClick={onDeleteLayer} disabled={layers.length <= 1 || activeLayer?.isBackground} className="p-1.5 hover:text-white rounded-md disabled:opacity-40" title="Delete layer">
-                            <Icon type="trash" />
-                        </button>
-                    </div>
+                 <div className="flex items-center justify-end p-2 mt-2 bg-black/10 rounded-md space-x-1 text-gray-400">
+                    <button onClick={onDuplicateLayer} className="p-1.5 hover:text-white rounded-md" title="Duplicate Layer">
+                       <Icon type="add-element" />
+                    </button>
+                    <button onClick={onMergeDown} disabled={!canMergeDown} className="p-1.5 hover:text-white rounded-md disabled:opacity-40" title="Merge Down">
+                       <Icon type="layers" />
+                    </button>
+                    <div className="flex-1" />
+                    <button onClick={onAddLayer} className="p-1.5 hover:text-white rounded-md" title="Add new layer">
+                        <Icon type="plus-square" />
+                    </button>
+                    <button onClick={onDeleteLayer} disabled={layers.length <= 1 || activeLayer?.isBackground} className="p-1.5 hover:text-white rounded-md disabled:opacity-40" title="Delete layer">
+                        <Icon type="trash" />
+                    </button>
                  </div>
             </div>
-             <footer className="h-14 flex items-center justify-between px-4 border-t border-black/20 flex-shrink-0">
-                <div className="flex items-center space-x-2 text-gray-400">
-                  <button className="p-2 hover:text-white rounded-md" title="History"><Icon type="history" /></button>
-                  <button className="p-2 hover:text-white rounded-md" title="Comments"><Icon type="comment" /></button>
-                </div>
-                 <button className="p-2 text-gray-400 hover:text-white rounded-md" title="Toggle panels">
-                    <Icon type="layers" />
-                 </button>
-             </footer>
         </aside>
     );
 };

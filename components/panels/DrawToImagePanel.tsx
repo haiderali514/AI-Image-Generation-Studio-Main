@@ -1,17 +1,13 @@
 
-
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import Button from '../ui/Button';
 import Spinner from '../ui/Spinner';
 import Canvas, { CanvasHandle } from '../ui/Canvas';
 import * as geminiService from '../../services/geminiService';
 import Icon from '../ui/Icon';
-// FIX: Import EditorTool to use for the Canvas component's activeTool prop.
-import { Tool, EditorTool } from '../../types';
+import { Tool, EditorTool, BrushShape } from '../../types';
 
 const CANVAS_SIZE = 512;
-// FIX: Aligned BrushShape with the type in Canvas.tsx to resolve type error.
-type BrushShape = 'round' | 'square';
 
 const DrawToImagePanel: React.FC = () => {
   const [prompt, setPrompt] = useState<string>('');
@@ -27,7 +23,6 @@ const DrawToImagePanel: React.FC = () => {
   const [isSuggesting, setIsSuggesting] = useState<boolean>(false);
   const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
 
-  // FIX: Implement local history management for undo/redo functionality
   const [history, setHistory] = useState<(ImageData | null)[]>([null]);
   const [historyIndex, setHistoryIndex] = useState(0);
 
@@ -132,12 +127,10 @@ const DrawToImagePanel: React.FC = () => {
         <div className="flex flex-col space-y-4 items-center">
             <h2 className="text-2xl font-bold text-indigo-400 self-start">Sketch Your Idea</h2>
             <div className="bg-gray-900">
-                {/* FIX: Add required props and remove unsupported props from Canvas component */}
                 <Canvas
                   ref={canvasRef}
                   width={CANVAS_SIZE}
                   height={CANVAS_SIZE}
-                  // FIX: Changed 'brushColor' to 'foregroundColor' to match CanvasProps and added missing text-related props.
                   foregroundColor={brushColor}
                   brushSize={brushSize}
                   brushOpacity={brushOpacity}
@@ -146,7 +139,6 @@ const DrawToImagePanel: React.FC = () => {
                   isLocked={false}
                   selectionRect={null}
                   onSelectionChange={() => {}}
-                  // FIX: Add missing 'onSelectionPreview' prop.
                   onSelectionPreview={() => {}}
                   imageDataToRender={history[historyIndex]}
                   onDrawEnd={handleDrawEnd}

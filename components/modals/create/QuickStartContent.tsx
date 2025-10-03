@@ -59,7 +59,7 @@ const QuickStartContent: React.FC<QuickStartContentProps> = ({ onUpload, onToolS
     ];
     return (
         <div className="space-y-8">
-            <h2 id="create-modal-title" className="text-2xl font-semibold text-gray-100">Create from an image</h2>
+            <h2 id="create-modal-title" className="text-2xl font-semibold text-gray-100">Open or create an image</h2>
             <div className="bg-gray-800/30 rounded-lg p-2">
                 <ImageUpload onUpload={onUpload} title="Upload a file to start editing" />
             </div>

@@ -17,32 +17,37 @@ const App: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [documentSettings, setDocumentSettings] = useState<DocumentSettings | null>(null);
+  const [initialFile, setInitialFile] = useState<File | null>(null);
 
-  const handleCreateDocument = (settings: DocumentSettings) => {
+  const handleCreateDocument = (settings: DocumentSettings, file?: File) => {
     const newProject = addRecentProject({
         ...settings,
-        background: 'White', // Force a white background for new documents for a standard starting canvas
-        customBgColor: '#FFFFFF',
+        background: settings.background,
+        customBgColor: settings.customBgColor,
     });
     setDocumentSettings(newProject);
+    setInitialFile(file ?? null);
     setIsEditorOpen(true);
     setIsCreateModalOpen(false);
   };
   
   const handleOpenRecentProject = (project: RecentProject) => {
     setDocumentSettings(project);
+    setInitialFile(null); // Recent projects don't have an initial file to load
     setIsEditorOpen(true);
   };
 
   const handleCloseEditor = () => {
     setIsEditorOpen(false);
     setDocumentSettings(null);
+    setInitialFile(null);
     setActiveTool(Tool.HOME); // Return to home screen
   };
 
   const handleOpenNewDocument = () => {
     setIsEditorOpen(false);
     setDocumentSettings(null);
+    setInitialFile(null);
     setIsCreateModalOpen(true);
   };
 
@@ -66,7 +71,7 @@ const App: React.FC = () => {
   }, [activeTool]);
 
   if (isEditorOpen && documentSettings) {
-    return <Editor document={documentSettings} onClose={handleCloseEditor} onNew={handleOpenNewDocument} />;
+    return <Editor document={documentSettings} onClose={handleCloseEditor} onNew={handleOpenNewDocument} initialFile={initialFile} />;
   }
 
   return (
