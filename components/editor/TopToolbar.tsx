@@ -134,14 +134,12 @@ const TopToolbar: React.FC<TopToolbarProps> = (props) => {
     
     const renderContent = () => {
         switch(props.activeTool) {
-            // FIX: Property 'BRUSH' does not exist on type 'typeof EditorTool'.
-            // FIX: Property 'ERASER' does not exist on type 'typeof EditorTool'.
             case EditorTool.PAINT:
                 return <BrushEraserOptions {...props} />;
-            // FIX: Property 'TEXT' does not exist on type 'typeof EditorTool'.
             case EditorTool.TYPE:
                 return <TextOptions {...props} />;
-            case EditorTool.MOVE:
+            // FIX: The `EditorTool` enum does not have a `MOVE` member. It should be `TRANSFORM`.
+            case EditorTool.TRANSFORM:
                 return <MoveOptions />;
             default:
                 return null;

@@ -1,18 +1,26 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { EditorTool, DocumentSettings, Layer, BrushShape, TextAlign } from '../../types';
+import { EditorTool, DocumentSettings, Layer, BrushShape, TextAlign, TransformSubTool } from '../../types';
 import Canvas from '../ui/Canvas';
 import TransformControls from './TransformControls';
-import FloatingActionBar from './FloatingActionBar';
+import { MoveActionBar, TransformActionBar, CropActionBar, AddImageActionBar } from './FloatingActionBar';
 
 const MIN_ZOOM = 0.05; // 5%
 const MAX_ZOOM = 32; // 3200%
+
+interface TransformSession {
+    layerId: string;
+    initialLayerState: Layer;
+    transform: DOMMatrix;
+    isAspectRatioLocked: boolean;
+}
 
 interface CanvasAreaProps {
   document: DocumentSettings;
   layers: Layer[];
   activeLayerId: string | null;
   activeTool: EditorTool;
+  activeSubTool: TransformSubTool;
   zoom: number;
   onZoom: (update: number | 'in' | 'out' | 'reset') => void;
   selection: { rect: { x: number; y: number; width: number; height: number; } } | null;
@@ -22,6 +30,12 @@ interface CanvasAreaProps {
   onDrawEnd: (imageData: ImageData) => void;
   onAttemptEditBackgroundLayer: () => void;
   onUpdateLayerPosition: (id: string, x: number, y: number) => void;
+  // Transform Props
+  transformSession: TransformSession | null;
+  onTransformStart: (layerId: string) => void;
+  onTransformUpdate: (transform: DOMMatrix) => void;
+  onTransformCommit: () => void;
+  onTransformCancel: () => void;
   // Tool props
   foregroundColor: string;
   brushSize: number;
@@ -34,18 +48,12 @@ interface CanvasAreaProps {
 }
 
 const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
-  const { document: docSettings, layers, activeLayerId, activeTool, zoom, onZoom, selection, onSelectionChange, selectionPreview, onSelectionPreview, onDrawEnd, onAttemptEditBackgroundLayer, onUpdateLayerPosition, ...toolProps } = props;
+  const { document: docSettings, layers, activeLayerId, activeTool, activeSubTool, zoom, onZoom, selection, onSelectionChange, selectionPreview, onSelectionPreview, onDrawEnd, onAttemptEditBackgroundLayer, onUpdateLayerPosition, transformSession, onTransformStart, onTransformUpdate, onTransformCommit, onTransformCancel, ...toolProps } = props;
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const panStart = useRef({ x: 0, y: 0 });
   const isPanning = useRef(false);
   
-  // State for layer movement
-  const [movingLayerState, setMovingLayerState] = useState<{ id: string; x: number; y: number } | null>(null);
-  const moveStartInfo = useRef<{ startX: number; startY: number; layerInitialX: number; layerInitialY: number; } | null>(null);
-  const [activeGuides, setActiveGuides] = useState<{ x: number[], y: number[] }>({ x: [], y: [] });
-  const guidesCanvasRef = useRef<HTMLCanvasElement>(null);
-
   const selectionCanvasRef = useRef<HTMLCanvasElement>(null);
   const marchOffset = useRef(0);
   const animationFrameId = useRef<number | undefined>(undefined);
@@ -95,23 +103,6 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    const activeLayer = layers.find(l => l.id === activeLayerId);
-
-    // Layer Move
-    if (activeTool === EditorTool.MOVE && activeLayer && !activeLayer.isLocked && !activeLayer.isBackground && e.button === 0 && !e.shiftKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        setMovingLayerState({ id: activeLayer.id, x: activeLayer.x, y: activeLayer.y });
-        moveStartInfo.current = {
-            startX: e.clientX,
-            startY: e.clientY,
-            layerInitialX: activeLayer.x,
-            layerInitialY: activeLayer.y,
-        };
-        if (containerRef.current) containerRef.current.style.cursor = 'move';
-        return;
-    }
-
     // Pan with Spacebar + Click or Middle Mouse Button
     if (e.button === 1 || e.buttons === 4 || (e.buttons === 1 && e.shiftKey)) { // Using Shift+Click for panning as Spacebar is hard to capture
       e.preventDefault();
@@ -122,56 +113,6 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
   };
   
   const handleMouseMove = (e: React.MouseEvent) => {
-    // Layer Move
-    if (movingLayerState && moveStartInfo.current) {
-        e.preventDefault();
-        const dx = (e.clientX - moveStartInfo.current.startX) / zoom;
-        const dy = (e.clientY - moveStartInfo.current.startY) / zoom;
-        
-        let newX = moveStartInfo.current.layerInitialX + dx;
-        let newY = moveStartInfo.current.layerInitialY + dy;
-        
-        // --- SNAPPING LOGIC ---
-        const SNAP_THRESHOLD = 5 / zoom;
-        const movingLayerBounds = {
-            top: newY, left: newX,
-            bottom: newY + docSettings.height, right: newX + docSettings.width,
-            hCenter: newX + docSettings.width / 2, vCenter: newY + docSettings.height / 2,
-        };
-
-        const snapPoints = {
-            x: [0, docSettings.width / 2, docSettings.width],
-            y: [0, docSettings.height / 2, docSettings.height],
-        };
-
-        layers.forEach(layer => {
-            if (layer.id !== movingLayerState.id && layer.isVisible && !layer.isBackground) {
-                snapPoints.x.push(layer.x, layer.x + docSettings.width / 2, layer.x + docSettings.width);
-                snapPoints.y.push(layer.y, layer.y + docSettings.height / 2, layer.y + docSettings.height);
-            }
-        });
-
-        const newGuides = { x: [] as number[], y: [] as number[] };
-        
-        // Check horizontal snaps
-        for (const targetX of snapPoints.x) {
-            if (Math.abs(movingLayerBounds.left - targetX) < SNAP_THRESHOLD) { newX = targetX; newGuides.x.push(targetX); break; }
-            if (Math.abs(movingLayerBounds.hCenter - targetX) < SNAP_THRESHOLD) { newX = targetX - docSettings.width / 2; newGuides.x.push(targetX); break; }
-            if (Math.abs(movingLayerBounds.right - targetX) < SNAP_THRESHOLD) { newX = targetX - docSettings.width; newGuides.x.push(targetX); break; }
-        }
-        
-        // Check vertical snaps
-        for (const targetY of snapPoints.y) {
-            if (Math.abs(movingLayerBounds.top - targetY) < SNAP_THRESHOLD) { newY = targetY; newGuides.y.push(targetY); break; }
-            if (Math.abs(movingLayerBounds.vCenter - targetY) < SNAP_THRESHOLD) { newY = targetY - docSettings.height / 2; newGuides.y.push(targetY); break; }
-            if (Math.abs(movingLayerBounds.bottom - targetY) < SNAP_THRESHOLD) { newY = targetY - docSettings.height; newGuides.y.push(targetY); break; }
-        }
-
-        setActiveGuides(newGuides);
-        setMovingLayerState({ ...movingLayerState, x: newX, y: newY });
-        return;
-    }
-    
     // Panning
     if (isPanning.current) {
       e.preventDefault();
@@ -183,15 +124,6 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
   };
 
   const handleMouseUp = (e: React.MouseEvent) => {
-    // End Layer Move
-    if (movingLayerState) {
-        onUpdateLayerPosition(movingLayerState.id, movingLayerState.x, movingLayerState.y);
-        setMovingLayerState(null);
-        moveStartInfo.current = null;
-        setActiveGuides({ x: [], y: [] });
-        if (containerRef.current) containerRef.current.style.cursor = 'default';
-    }
-
     // End Panning
     if (isPanning.current) {
         isPanning.current = false;
@@ -233,45 +165,52 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
     };
   }, [selection, selectionPreview, zoom]);
   
-   useEffect(() => {
-    const canvas = guidesCanvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (!movingLayerState) return;
-
-    ctx.strokeStyle = '#FF00FF'; // Pink
-    ctx.lineWidth = 1 / zoom;
-    ctx.setLineDash([5 / zoom, 3 / zoom]);
-
-    const extend = 10000; // Extend guides far off-canvas
-
-    activeGuides.x.forEach(x => {
-        ctx.beginPath();
-        ctx.moveTo(x, -extend);
-        ctx.lineTo(x, docSettings.height + extend);
-        ctx.stroke();
-    });
-    activeGuides.y.forEach(y => {
-        ctx.beginPath();
-        ctx.moveTo(-extend, y);
-        ctx.lineTo(docSettings.width + extend, y);
-        ctx.stroke();
-    });
-
-  }, [activeGuides, zoom, docSettings, movingLayerState]);
-  
   const activeLayer = layers.find(l => l.id === activeLayerId);
-  const showTransformControls = activeTool === EditorTool.MOVE && activeLayer && activeLayer.imageData !== null && !activeLayer.isBackground;
+  const showTransformControls = activeTool === EditorTool.TRANSFORM && activeSubTool === 'transform' && activeLayer && !activeLayer.isBackground && !activeLayer.isLocked;
 
-  const getLayerPosition = (layer: Layer) => {
-    if (movingLayerState && movingLayerState.id === layer.id) {
-        return { x: movingLayerState.x, y: movingLayerState.y };
+  const getLayerStyle = (layer: Layer): React.CSSProperties => {
+    const baseStyle: React.CSSProperties = {
+        display: layer.isVisible ? 'block' : 'none',
+        opacity: layer.isBackground ? 1 : layer.opacity,
+        mixBlendMode: layer.isBackground ? 'normal' : layer.blendMode,
+        position: 'absolute',
+        top: 0, // Top/left are now handled by transform
+        left: 0,
+        width: `${docSettings.width}px`,
+        height: `${docSettings.height}px`,
+        transformOrigin: 'top left', // Use top-left origin for CSS transforms
+    };
+    
+    if (transformSession && transformSession.layerId === layer.id) {
+        // Live preview during transform
+        baseStyle.transform = transformSession.transform.toString();
+        // Render the original, untransformed image data while transforming
+    } else {
+        // Standard position for non-transforming layers
+        baseStyle.transform = `translate(${layer.x}px, ${layer.y}px)`;
     }
-    return { x: layer.x, y: layer.y };
+    
+    return baseStyle;
   };
+  
+  const isTransforming = !!transformSession;
+  const isCropping = activeTool === EditorTool.TRANSFORM && activeSubTool === 'crop';
+  
+  const renderFloatingActionBar = () => {
+    if (isTransforming) {
+        return <TransformActionBar onCancel={onTransformCancel} onDone={onTransformCommit} />;
+    }
+    if (isCropping) {
+        return <CropActionBar onCancel={() => {}} onDone={() => {}} />;
+    }
+    if (activeTool === EditorTool.TRANSFORM && activeSubTool === 'move') {
+        return <MoveActionBar />;
+    }
+    if (activeTool === EditorTool.ADD_IMAGE) {
+        return <AddImageActionBar />;
+    }
+    return null;
+  }
 
   return (
     <div 
@@ -281,7 +220,7 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
          backgroundColor: '#181818',
          backgroundImage: 'linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px)',
          backgroundSize: '20px 20px',
-         cursor: isPanning.current ? 'grabbing' : movingLayerState ? 'move' : 'default',
+         cursor: isPanning.current ? 'grabbing' : 'default',
       }}
       onWheel={handleWheel}
       onMouseDown={handleMouseDown}
@@ -295,34 +234,23 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
       >
         <div className="shadow-2xl bg-black relative" style={{ width: docSettings.width, height: docSettings.height }}>
             {layers.map(layer => {
-              const pos = getLayerPosition(layer);
-              const isMovingThisLayer = movingLayerState?.id === layer.id;
+              const imageDataToRender = (transformSession && transformSession.layerId === layer.id) 
+                ? transformSession.initialLayerState.imageData 
+                : layer.imageData;
+
               return (
-                <div key={layer.id}
-                     style={{
-                        display: layer.isVisible ? 'block' : 'none',
-                        opacity: layer.isBackground ? 1 : layer.opacity,
-                        mixBlendMode: layer.isBackground ? 'normal' : layer.blendMode,
-                        position: 'absolute',
-                        top: `${pos.y}px`,
-                        left: `${pos.x}px`,
-                        width: `${docSettings.width}px`,
-                        height: `${docSettings.height}px`,
-                        outline: isMovingThisLayer ? `${1/zoom}px dashed #FF00FF` : 'none',
-                        outlineOffset: `${1/zoom}px`,
-                     }}
-                >
+                <div key={layer.id} style={getLayerStyle(layer)}>
                     <Canvas
                         width={docSettings.width}
                         height={docSettings.height}
                         activeTool={activeTool}
-                        isLocked={layer.isLocked || isMovingThisLayer}
+                        isLocked={layer.isLocked || isTransforming}
                         isBackground={layer.isBackground}
                         onAttemptEditBackgroundLayer={onAttemptEditBackgroundLayer}
                         selectionRect={selection?.rect || null}
                         onSelectionChange={onSelectionChange}
                         onSelectionPreview={onSelectionPreview}
-                        imageDataToRender={layer.imageData}
+                        imageDataToRender={imageDataToRender}
                         onDrawEnd={onDrawEnd}
                         zoom={zoom}
                         {...toolProps}
@@ -331,21 +259,25 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
               )
             })}
              <canvas
-              ref={guidesCanvasRef}
-              width={docSettings.width}
-              height={docSettings.height}
-              className="absolute top-0 left-0 pointer-events-none"
-            />
-             <canvas
               ref={selectionCanvasRef}
               width={docSettings.width}
               height={docSettings.height}
               className="absolute top-0 left-0 pointer-events-none"
             />
-            {showTransformControls && !movingLayerState && <TransformControls width={docSettings.width} height={docSettings.height} zoom={zoom} />}
+            {showTransformControls && activeLayer && (
+                <TransformControls 
+                    layer={activeLayer}
+                    docWidth={docSettings.width}
+                    docHeight={docSettings.height}
+                    zoom={zoom}
+                    transformSession={transformSession}
+                    onTransformStart={onTransformStart}
+                    onTransformUpdate={onTransformUpdate}
+                />
+            )}
         </div>
       </div>
-      {showTransformControls && <FloatingActionBar />}
+      {renderFloatingActionBar()}
     </div>
   );
 };

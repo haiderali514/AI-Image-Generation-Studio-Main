@@ -18,8 +18,9 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ activeTool }) => {
     
     const getToolInfo = (): { title: string, description: string } => {
         switch (activeTool) {
-            case EditorTool.MOVE:
-                return { title: "Move Tool", description: "Pan the canvas, or click and drag a selection to move it." };
+            // FIX: The `EditorTool` enum does not have a `MOVE` member. It should be `TRANSFORM`.
+            case EditorTool.TRANSFORM:
+                return { title: "Size & position", description: "Move, scale, and rotate the active layer. Use the handles on the canvas." };
             case EditorTool.SELECT:
                 return { title: "Selection Tool", description: "Click and drag to create a rectangular selection." };
             case EditorTool.PAINT:

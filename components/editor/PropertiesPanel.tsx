@@ -1,91 +1,165 @@
 
-import React from 'react';
-import { EditorTool, AutoSelectType } from '../../types';
+import React, { useState } from 'react';
+import { EditorTool, AutoSelectType, TransformSubTool } from '../../types';
 import Icon from '../ui/Icon';
 import Select from '../ui/Select';
+import Input from '../ui/Input';
+import AddImagePanel from '../panels/AddImagePanel';
 
 interface PropertiesPanelProps {
     activeTool: EditorTool;
+    activeSubTool: TransformSubTool;
+    onSubToolChange: (subTool: TransformSubTool) => void;
     autoSelect: AutoSelectType;
     onAutoSelectChange: (type: AutoSelectType) => void;
     onClose: () => void;
+    onImageAdded: (url: string) => void;
+    transformProps?: {
+        width: number;
+        height: number;
+        x: number;
+        y: number;
+        rotation: number;
+        isAspectRatioLocked: boolean;
+        onPropChange: (prop: string, value: number) => void;
+        onLockToggle: () => void;
+    }
 }
 
 const getToolProperties = (tool: EditorTool): { title: string, panel: React.ComponentType<any> | null } => {
     switch (tool) {
-        case EditorTool.MOVE:
+        case EditorTool.TRANSFORM:
             return {
                 title: "Size & position",
-                panel: MoveToolPanel
+                panel: TransformToolPanel
             };
-        case EditorTool.GENERATIVE: return { title: "Generative", panel: null };
-        case EditorTool.ADJUST: return { title: "Adjust", panel: null };
-        case EditorTool.SELECT: return { title: "Select", panel: null };
-        case EditorTool.RETOUCH: return { title: "Retouch", panel: null };
-        case EditorTool.QUICK_ACTIONS: return { title: "Quick actions", panel: null };
-        case EditorTool.EFFECTS: return { title: "Effects", panel: null };
-        case EditorTool.PAINT: return { title: "Paint", panel: null };
-        case EditorTool.SHAPES: return { title: "Shapes", panel: null };
-        case EditorTool.TYPE: return { title: "Type", panel: null };
-        case EditorTool.ADD_IMAGE: return { title: "Add image", panel: null };
+        case EditorTool.ADD_IMAGE:
+            return {
+                title: "Add image",
+                panel: AddImagePanel
+            };
+        // other tool cases...
         default:
             return { title: "Properties", panel: null };
     }
 };
 
-const MoveToolPanel: React.FC<Pick<PropertiesPanelProps, 'autoSelect' | 'onAutoSelectChange'>> = ({ autoSelect, onAutoSelectChange }) => {
+const MoveToolProperties: React.FC = () => {
+    return (
+        <div className="space-y-4">
+            <div>
+                <Select label="Auto-select" options={[{ value: 'Layer', label: 'Layer' }, { value: 'Group', label: 'Group' }]} value="Layer" onChange={() => {}} />
+            </div>
+            <div>
+                 <label className="block text-sm font-medium text-gray-400 mb-1">Align</label>
+                 <div className="grid grid-cols-6 gap-1">
+                    <button title="Align Left Edges" className="p-2 rounded bg-[#363636] hover:bg-gray-700"><Icon type="align-left-2" /></button>
+                    <button title="Align Horizontal Centers" className="p-2 rounded bg-[#363636] hover:bg-gray-700"><Icon type="align-center-horizontal-2" /></button>
+                    <button title="Align Right Edges" className="p-2 rounded bg-[#363636] hover:bg-gray-700"><Icon type="align-right-2" /></button>
+                    <button title="Align Top Edges" className="p-2 rounded bg-[#363636] hover:bg-gray-700"><Icon type="align-top-2" /></button>
+                    <button title="Align Vertical Centers" className="p-2 rounded bg-[#363636] hover:bg-gray-700"><Icon type="align-center-vertical-2" /></button>
+                    <button title="Align Bottom Edges" className="p-2 rounded bg-[#363636] hover:bg-gray-700"><Icon type="align-bottom-2" /></button>
+                 </div>
+            </div>
+            <button className="w-full flex items-center justify-between p-2 text-sm text-gray-300 hover:bg-[#363636] rounded-md">
+                <span>Advanced settings</span>
+                <Icon type="chevron-right" />
+            </button>
+        </div>
+    );
+};
 
-    const alignButtons = [
-        { icon: 'align-left-2', title: 'Align left edges' },
-        { icon: 'align-center-horizontal-2', title: 'Align horizontal centers' },
-        { icon: 'align-right-2', title: 'Align right edges' },
-        { icon: 'align-top-2', title: 'Align top edges' },
-        { icon: 'align-center-vertical-2', title: 'Align vertical centers' },
-        { icon: 'align-bottom-2', title: 'Align bottom edges' },
-    ] as const;
+const TransformToolProperties: React.FC<Pick<PropertiesPanelProps, 'transformProps'>> = ({ transformProps }) => {
+    if (!transformProps) {
+        return <div className="text-gray-500 text-sm p-4 text-center">Select a layer to transform.</div>;
+    }
+    const { width, height, x, y, rotation, isAspectRatioLocked, onPropChange, onLockToggle } = transformProps;
 
     return (
-        <>
-            <div className="p-3 bg-[#2F6FEF] rounded-md flex items-center space-x-3">
-                <Icon type="move" className="text-white" />
-                <span className="font-semibold text-white">Move</span>
-            </div>
-            <div className="space-y-4">
-                <Select
-                    label="Auto-select"
-                    options={[{ value: 'Layer', label: 'Layer' }, { value: 'Group', label: 'Group' }]}
-                    value={autoSelect}
-                    onChange={(val) => onAutoSelectChange(val as AutoSelectType)}
-                />
-
-                <div>
-                    <label className="block text-xs font-medium text-gray-400 mb-2">Align</label>
-                    <div className="grid grid-cols-6 gap-1">
-                        {alignButtons.map(btn => (
-                            <button key={btn.icon} title={btn.title} className="p-2 bg-[#363636] rounded-md text-gray-300 hover:bg-gray-700">
-                                <Icon type={btn.icon} />
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                <button className="w-full text-left flex items-center space-x-2 text-gray-300">
-                    <Icon type="chevron-down" className="w-4 h-4 transform -rotate-90" />
-                    <span className="font-semibold">Advanced settings</span>
-                </button>
-            </div>
-             <div className="border-t border-black/20 -mx-4"/>
-             <div className="space-y-2">
-                 <button className="w-full flex items-center p-2 space-x-3 rounded-md hover:bg-[#363636]">
-                    <Icon type="transform" className="text-gray-400" />
-                    <span>Transform</span>
-                 </button>
-                 <button className="w-full flex items-center p-2 space-x-3 rounded-md hover:bg-[#363636]">
-                    <Icon type="crop" className="text-gray-400" />
-                    <span>Crop</span>
-                 </button>
+        <div className="space-y-3">
+             <div className="flex items-center space-x-1 bg-[#1E1E1E] p-1 rounded-lg">
+                <button className="flex-1 p-1.5 rounded-md flex items-center justify-center space-x-1 text-sm bg-[#363636]"><Icon type="transform" /><span>Freeform</span></button>
+                <button className="flex-1 p-1.5 rounded-md flex items-center justify-center space-x-1 text-sm hover:bg-[#363636]" disabled><Icon type="selection" /><span>Warp</span></button>
              </div>
-        </>
+
+             <div className="flex items-center space-x-2">
+                <Input label="Width" type="number" value={Math.round(width)} onChange={e => onPropChange('width', parseFloat(e.target.value))} />
+                <button onClick={onLockToggle} className="p-2 self-end text-gray-400 hover:text-white transition-colors">
+                    <Icon type={isAspectRatioLocked ? 'lock' : 'unlock'} />
+                </button>
+                <Input label="Height" type="number" value={Math.round(height)} onChange={e => onPropChange('height', parseFloat(e.target.value))} />
+             </div>
+             <div className="grid grid-cols-2 gap-x-2">
+                <Input label="X" type="number" value={Math.round(x)} onChange={e => onPropChange('x', parseFloat(e.target.value))} />
+                <Input label="Y" type="number" value={Math.round(y)} onChange={e => onPropChange('y', parseFloat(e.target.value))} />
+             </div>
+             <Input label="Rotation" type="number" value={rotation.toFixed(1)} onChange={e => onPropChange('rotation', parseFloat(e.target.value))} />
+        </div>
+    )
+};
+
+const CropToolProperties: React.FC = () => {
+    return (
+        <div className="space-y-4">
+            <Select label="Units" options={[{value: 'Pixels', label: 'Pixels'}]} value="Pixels" onChange={() => {}}/>
+            <div className="flex items-center space-x-2">
+                <Input label="Width" type="number" value={1920} />
+                <button className="p-2 self-end text-gray-400 hover:text-white transition-colors">
+                    <Icon type="swap" />
+                </button>
+                <Input label="Height" type="number" value={1080} />
+             </div>
+             <div>
+                <label className="block text-sm font-medium text-gray-400 mb-1">Rotate</label>
+                <div className="flex items-center space-x-2">
+                    <input type="range" min="-45" max="45" value="0" className="w-full accent-blue-500" />
+                    <Input type="number" value="0.0" className="w-24"/>
+                </div>
+             </div>
+             <div className="grid grid-cols-2 gap-2">
+                <button className="w-full p-2 text-sm bg-[#363636] rounded-md text-gray-300 hover:bg-gray-700">Straighten</button>
+                <button className="w-full p-2 text-sm bg-[#363636] rounded-md text-gray-300 hover:bg-gray-700">Rotate</button>
+             </div>
+             <button className="w-full flex items-center justify-center p-2 space-x-2 bg-[#363636] rounded-md text-gray-300 hover:bg-gray-700">
+                <Icon type="reset-colors" />
+                <span>Reset</span>
+             </button>
+        </div>
+    )
+}
+
+const TransformToolPanel: React.FC<PropertiesPanelProps> = (props) => {
+    const { activeSubTool, onSubToolChange } = props;
+
+    const SubToolButton: React.FC<{ label: string; iconType: 'move' | 'transform' | 'crop'; tool: TransformSubTool }> = ({ label, iconType, tool }) => (
+        <button
+            onClick={() => onSubToolChange(tool)}
+            className={`flex-1 p-2 rounded-md flex items-center space-x-2 text-sm transition-colors ${activeSubTool === tool ? 'bg-[#2F6FEF] text-white' : 'hover:bg-[#363636] text-gray-300'}`}
+        >
+            <Icon type={iconType} />
+            <span>{label}</span>
+        </button>
+    );
+    
+    const renderSubPanel = () => {
+        switch(activeSubTool) {
+            case 'move': return <MoveToolProperties />;
+            case 'transform': return <TransformToolProperties {...props} />;
+            case 'crop': return <CropToolProperties />;
+            default: return null;
+        }
+    }
+
+    return (
+        <div className="space-y-4">
+            <div className="flex space-x-2 bg-[#1E1E1E] p-1 rounded-lg">
+                <SubToolButton label="Move" iconType="move" tool="move" />
+                <SubToolButton label="Transform" iconType="transform" tool="transform" />
+                <SubToolButton label="Crop" iconType="crop" tool="crop" />
+            </div>
+            <div className="border-t border-black/20"/>
+            {renderSubPanel()}
+        </div>
     )
 }
 

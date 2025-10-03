@@ -1,4 +1,5 @@
 
+
 export enum Tool {
   HOME = 'HOME',
   FILES = 'FILES',
@@ -12,7 +13,7 @@ export enum Tool {
  * Defines the set of tools available within the main editor, redesigned for a modern workflow.
  */
 export enum EditorTool {
-  MOVE = 'MOVE',
+  TRANSFORM = 'TRANSFORM',
   GENERATIVE = 'GENERATIVE',
   ADJUST = 'ADJUST',
   SELECT = 'SELECT',
@@ -24,6 +25,8 @@ export enum EditorTool {
   TYPE = 'TYPE',
   ADD_IMAGE = 'ADD_IMAGE',
 }
+
+export type TransformSubTool = 'move' | 'transform' | 'crop';
 
 export type AutoSelectType = 'Layer' | 'Group';
 

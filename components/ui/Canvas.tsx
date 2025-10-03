@@ -343,7 +343,8 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
       }
 
       switch (activeTool) {
-          case EditorTool.MOVE:
+          // FIX: The `EditorTool` enum does not have a `MOVE` member. It should be `TRANSFORM`.
+          case EditorTool.TRANSFORM:
               canvas.style.cursor = 'move';
               break;
           case EditorTool.SELECT:

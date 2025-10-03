@@ -1,7 +1,8 @@
 
+
 import React from 'react';
 
-type IconType = 'text' | 'draw' | 'fill' | 'cut' | 'logo' | 'upload' | 'clear' | 'download' | 'brush-round' | 'brush-square' | 'sparkle' | 'undo' | 'redo' | 'home' | 'files' | 'plus' | 'crop' | 'color-pop' | 'notification' | 'profile' | 'close' | 'search' | 'image' | 'document' | 'orientation-portrait' | 'orientation-landscape' | 'check' | 'chevron-down' | 'save' | 'trash' | 'lock' | 'unlock' | 'edit' | 'zoom-in' | 'zoom-out' | 'eraser' | 'shapes' | 'move' | 'selection' | 'eye' | 'eye-off' | 'plus-square' | 'swap' | 'reset-colors' | 'align-left' | 'align-center' | 'align-right' | 'align-left-2' | 'align-center-horizontal-2' | 'align-right-2' | 'align-top-2' | 'align-center-vertical-2' | 'align-bottom-2' | 'ps-logo' | 'menu' | 'cloud' | 'share' | 'comment' | 'history' | 'add-element' | 'transform' | 'layers' | 'layer-options' | 'info' | 'select-subject' | 'crown' | 'chevron-right' | 'generative' | 'adjust' | 'retouch' | 'quick-actions' | 'effects' | 'paint' | 'type' | 'add-image' | 'select';
+type IconType = 'text' | 'draw' | 'fill' | 'cut' | 'logo' | 'upload' | 'clear' | 'download' | 'brush-round' | 'brush-square' | 'sparkle' | 'undo' | 'redo' | 'home' | 'files' | 'plus' | 'crop' | 'color-pop' | 'notification' | 'profile' | 'close' | 'search' | 'image' | 'document' | 'orientation-portrait' | 'orientation-landscape' | 'check' | 'chevron-down' | 'save' | 'trash' | 'lock' | 'unlock' | 'edit' | 'zoom-in' | 'zoom-out' | 'eraser' | 'shapes' | 'move' | 'selection' | 'eye' | 'eye-off' | 'plus-square' | 'swap' | 'reset-colors' | 'align-left' | 'align-center' | 'align-right' | 'align-left-2' | 'align-center-horizontal-2' | 'align-right-2' | 'align-top-2' | 'align-center-vertical-2' | 'align-bottom-2' | 'ps-logo' | 'menu' | 'cloud' | 'share' | 'comment' | 'history' | 'add-element' | 'transform' | 'layers' | 'layer-options' | 'info' | 'select-subject' | 'crown' | 'chevron-right' | 'generative' | 'adjust' | 'retouch' | 'quick-actions' | 'effects' | 'paint' | 'type' | 'add-image' | 'select' | 'flip-horizontal' | 'flip-vertical';
 
 interface IconProps {
   type: IconType;
@@ -210,7 +211,7 @@ const icons: Record<IconType, React.ReactNode> = {
     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 8v8"/><path d="M8 12h8"/><rect width="18" height="18" x="3" y="3" rx="2"/></svg>
   ),
   'transform': (
-    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12H3"/><path d="m18 9 3 3-3 3"/><path d="M3 12v6h6"/><path d="m3 18 3-3"/><path d="M12 3h6v6"/><path d="m18 3-3 3"/></svg>
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="1.5"/><circle cx="5" cy="5" r="1.5" fill="currentColor"/><circle cx="19" cy="5" r="1.5" fill="currentColor"/><circle cx="5" cy="19" r="1.5" fill="currentColor"/><circle cx="19" cy="19" r="1.5" fill="currentColor"/></svg>
   ),
   'layers': (
     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-8.58 3.91a2 2 0 0 1-1.66 0L3.2 17.65"/><path d="m22 12.65-8.58 3.91a2 2 0 0 1-1.66 0L3.2 12.65"/></svg>
@@ -229,7 +230,9 @@ const icons: Record<IconType, React.ReactNode> = {
   ),
   'chevron-right': (
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-  )
+  ),
+  'flip-horizontal': <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3V21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 7L4 12L8 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 7L20 12L16 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>,
+  'flip-vertical': <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 12H21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 8L12 4L17 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 16L12 20L17 16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>,
 };
 
 const Icon: React.FC<IconProps> = ({ type, className }) => {

@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 import { EditorTool } from '../../types';
 import Icon from '../ui/Icon';
@@ -9,7 +10,7 @@ interface ToolbarProps {
 }
 
 const toolConfig: { tool: EditorTool, label: string, icon: React.ReactNode }[] = [
-  { tool: EditorTool.MOVE, label: 'Size & position', icon: <Icon type="move" /> },
+  { tool: EditorTool.TRANSFORM, label: 'Size & position', icon: <Icon type="transform" /> },
   { tool: EditorTool.GENERATIVE, label: 'Generative', icon: <Icon type="generative" /> },
   { tool: EditorTool.ADJUST, label: 'Adjust', icon: <Icon type="adjust" /> },
   { tool: EditorTool.SELECT, label: 'Select', icon: <Icon type="select" /> },

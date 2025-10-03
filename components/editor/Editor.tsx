@@ -1,7 +1,5 @@
-
-
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { DocumentSettings, EditorTool, Layer, AutoSelectType } from '../../types';
+import { DocumentSettings, EditorTool, Layer, TransformSubTool } from '../../types';
 import EditorHeader from './EditorHeader';
 import CanvasArea from './CanvasArea';
 import Toolbar from './Toolbar';
@@ -19,12 +17,20 @@ interface EditorProps {
   initialFile?: File | null;
 }
 
+interface TransformSession {
+    layerId: string;
+    initialLayerState: Layer;
+    transform: DOMMatrix;
+    isAspectRatioLocked: boolean;
+}
+
 const MAX_ZOOM = 32; // 3200%
 const MIN_ZOOM = 0.05; // 5%
 
 const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onClose, onNew, initialFile }) => {
   const [docSettings, setDocSettings] = useState(initialDocumentSettings);
-  const [activeTool, setActiveTool] = useState<EditorTool>(EditorTool.MOVE);
+  const [activeTool, setActiveTool] = useState<EditorTool>(EditorTool.TRANSFORM);
+  const [activeSubTool, setActiveSubTool] = useState<TransformSubTool>('move');
   const [zoom, setZoom] = useState(1);
   const [selection, setSelection] = useState<{ rect: { x: number; y: number; width: number; height: number; } } | null>(null);
   const [selectionPreview, setSelectionPreview] = useState<{ rect: { x: number; y: number; width: number; height: number; } } | null>(null);
@@ -37,6 +43,7 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
   const [isBgConvertModalOpen, setIsBgConvertModalOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [transformSession, setTransformSession] = useState<TransformSession | null>(null);
 
   const currentLayers = useMemo(() => history[historyIndex] ?? [], [history, historyIndex]);
   const activeLayer = useMemo(() => currentLayers.find(l => l.id === activeLayerId), [currentLayers, activeLayerId]);
@@ -270,8 +277,61 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
 
   const handleToolSelect = (tool: EditorTool) => {
     setSelectionPreview(null);
-    if (tool === activeTool) setIsPropertiesPanelOpen(prev => !prev);
-    else { setActiveTool(tool); setIsPropertiesPanelOpen(true); }
+    if (tool === EditorTool.TRANSFORM) {
+        setActiveSubTool('move');
+    }
+    if (tool === activeTool) {
+        setIsPropertiesPanelOpen(prev => !prev);
+    } else { 
+        setActiveTool(tool); 
+        setIsPropertiesPanelOpen(true); 
+    }
+  };
+  
+  const handleImageAdded = (imageUrl: string) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous'; // For loading external stock images
+    img.onload = () => {
+        const newLayer: Layer = {
+            id: crypto.randomUUID(),
+            name: 'Image',
+            isVisible: true,
+            isLocked: false,
+            opacity: 1,
+            blendMode: 'normal',
+            imageData: null, // Will be filled
+            x: 0,
+            y: 0,
+        };
+
+        const canvas = document.createElement('canvas');
+        canvas.width = docSettings.width;
+        canvas.height = docSettings.height;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) return;
+
+        // Scale and center the image within the document bounds
+        const hRatio = canvas.width / img.width;
+        const vRatio = canvas.height / img.height;
+        const ratio = Math.min(hRatio, vRatio, 1); // Don't scale up, only down
+        const centerShift_x = (canvas.width - img.width * ratio) / 2;
+        const centerShift_y = (canvas.height - img.height * ratio) / 2;
+        
+        ctx.drawImage(img, 0, 0, img.width, img.height, centerShift_x, centerShift_y, img.width * ratio, img.height * ratio);
+
+        newLayer.imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        newLayer.thumbnail = generateThumbnail(newLayer.imageData, 48, 40);
+
+        // Insert new layer above the active one
+        const activeIndex = activeLayerId ? currentLayers.findIndex(l => l.id === activeLayerId) : currentLayers.length - 1;
+        const newLayers = [...currentLayers];
+        newLayers.splice(activeIndex + 1, 0, newLayer);
+        commit(newLayers, newLayer.id);
+    };
+    img.onerror = () => {
+        alert('Could not load the selected image. It may be due to CORS policy if it\'s a web image.');
+    };
+    img.src = imageUrl;
   };
 
   const handleAttemptEditBackground = () => setIsBgConvertModalOpen(true);
@@ -287,6 +347,71 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
     convertBackgroundToLayer();
     setIsBgConvertModalOpen(false);
   };
+  
+  // --- TRANSFORM TOOL LOGIC ---
+  const handleTransformStart = (layerId: string) => {
+    const layerToTransform = currentLayers.find(l => l.id === layerId);
+    if (layerToTransform) {
+        setTransformSession({
+            layerId: layerId,
+            initialLayerState: layerToTransform,
+            transform: new DOMMatrix(),
+            isAspectRatioLocked: false,
+        });
+    }
+  };
+  const handleTransformUpdate = (newTransform: DOMMatrix) => {
+    if (transformSession) {
+        setTransformSession(prev => prev ? { ...prev, transform: newTransform } : null);
+    }
+  };
+  const handleTransformCommit = () => {
+    if (!transformSession) return;
+    const { initialLayerState, transform } = transformSession;
+
+    const sourceCanvas = document.createElement('canvas');
+    sourceCanvas.width = docSettings.width;
+    sourceCanvas.height = docSettings.height;
+    const sourceCtx = sourceCanvas.getContext('2d');
+    if (!sourceCtx || !initialLayerState.imageData) {
+        setTransformSession(null);
+        return;
+    }
+    sourceCtx.putImageData(initialLayerState.imageData, 0, 0);
+
+    const destCanvas = document.createElement('canvas');
+    destCanvas.width = docSettings.width;
+    destCanvas.height = docSettings.height;
+    const destCtx = destCanvas.getContext('2d', { willReadFrequently: true });
+    if (!destCtx) {
+         setTransformSession(null);
+        return;
+    }
+    
+    // The transform matrix is relative to the layer's top-left corner.
+    // We need to translate the context so the transform happens around the layer's center.
+    const centerX = initialLayerState.x + docSettings.width / 2;
+    const centerY = initialLayerState.y + docSettings.height / 2;
+
+    destCtx.translate(centerX, centerY);
+    destCtx.setTransform(transform);
+    destCtx.translate(-centerX, -centerY);
+
+    destCtx.drawImage(sourceCanvas, initialLayerState.x, initialLayerState.y);
+
+    const newImageData = destCtx.getImageData(0, 0, docSettings.width, docSettings.height);
+    
+    const newLayers = currentLayers.map(l => 
+        l.id === initialLayerState.id ? { ...l, imageData: newImageData, thumbnail: generateThumbnail(newImageData, 48, 40) } : l
+    );
+
+    commit(newLayers);
+    setTransformSession(null);
+  };
+  const handleTransformCancel = () => {
+    setTransformSession(null);
+  };
+  // --- END TRANSFORM TOOL LOGIC ---
 
   const handleExport = (format: ExportFormat, quality?: number) => {
     const compositeCanvas = document.createElement('canvas');
@@ -348,6 +473,28 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
   const canUndo = historyIndex > 0;
   const canRedo = historyIndex < history.length - 1;
 
+  // --- DERIVED PROPS FOR PANELS ---
+  const transformProps = useMemo(() => {
+    if (!transformSession) return undefined;
+    
+    // Decompose matrix to get intuitive values
+    const { a, b, c, d, e, f } = transformSession.transform;
+    const rotation = Math.atan2(b, a) * (180 / Math.PI);
+    const scaleX = Math.sqrt(a * a + b * b);
+    const scaleY = Math.sqrt(c * c + d * d) * (a * d - b * c > 0 ? 1 : -1);
+
+    return {
+        width: docSettings.width * scaleX,
+        height: docSettings.height * scaleY,
+        x: e,
+        y: f,
+        rotation: rotation,
+        isAspectRatioLocked: transformSession.isAspectRatioLocked,
+        onPropChange: (prop: string, value: number) => console.log(prop, value), // Placeholder
+        onLockToggle: () => setTransformSession(prev => prev ? {...prev, isAspectRatioLocked: !prev.isAspectRatioLocked } : null),
+    };
+  }, [transformSession, docSettings.width, docSettings.height]);
+
   return (
     <div className="flex flex-col h-screen bg-[#181818] text-gray-300 font-sans text-sm">
       <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".aips" className="hidden" />
@@ -363,20 +510,32 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
         {isPropertiesPanelOpen && (
             <PropertiesPanel 
               activeTool={activeTool}
+              activeSubTool={activeSubTool}
+              onSubToolChange={setActiveSubTool}
               autoSelect={'Layer'} onAutoSelectChange={() => {}}
               onClose={() => setIsPropertiesPanelOpen(false)}
+              transformProps={transformProps}
+              onImageAdded={handleImageAdded}
             />
         )}
         <main className="flex-1 flex flex-col bg-[#181818] overflow-hidden">
           <CanvasArea
             document={docSettings} layers={currentLayers} activeLayerId={activeLayerId}
-            activeTool={activeTool} zoom={zoom} onZoom={handleZoom}
+            activeTool={activeTool} activeSubTool={activeSubTool}
+            zoom={zoom} onZoom={handleZoom}
             selection={selection} onSelectionChange={handleSelectionChange}
             selectionPreview={selectionPreview}
-            // FIX: Pass `handleSelectionPreview` function to `onSelectionPreview` prop.
+            // FIX: Pass the correct handler function `handleSelectionPreview` instead of the non-existent variable `onSelectionPreview`.
             onSelectionPreview={handleSelectionPreview}
             onDrawEnd={handleDrawEnd} onAttemptEditBackgroundLayer={handleAttemptEditBackground}
             onUpdateLayerPosition={handleUpdateLayerPosition}
+            // Transform props
+            transformSession={transformSession}
+            onTransformStart={handleTransformStart}
+            onTransformUpdate={handleTransformUpdate}
+            onTransformCommit={handleTransformCommit}
+            onTransformCancel={handleTransformCancel}
+            // Tool props
             foregroundColor="#000" brushSize={10} brushOpacity={1} brushHardness={1}
             brushShape="round" fontFamily="sans-serif" fontSize={12} textAlign="left"
           />
