@@ -93,11 +93,21 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
         setPan({ x: newPanX, y: newPanY });
         onZoom(clampedZoom);
 
-    } else { // Panning with scroll wheel (or Shift for horizontal)
+    } else { // Panning logic
         const panSpeed = 1;
+        let dx = e.deltaX;
+        let dy = e.deltaY;
+        
+        // If shift is pressed and there's vertical scroll, treat it as horizontal scroll.
+        // This makes it work even if the browser doesn't convert deltaY to deltaX.
+        if (e.shiftKey && dy !== 0) {
+            dx += dy;
+            dy = 0;
+        }
+
         setPan(prevPan => ({
-            x: prevPan.x - e.deltaX * panSpeed,
-            y: prevPan.y - e.deltaY * panSpeed,
+            x: prevPan.x - dx * panSpeed,
+            y: prevPan.y - dy * panSpeed,
         }));
     }
   };
