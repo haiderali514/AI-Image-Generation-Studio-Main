@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { EditorTool, AutoSelectType, TransformSubTool } from '../../types';
 import Icon from '../ui/Icon';
@@ -131,36 +130,33 @@ const CropToolProperties: React.FC = () => {
 const TransformToolPanel: React.FC<PropertiesPanelProps> = (props) => {
     const { activeSubTool, onSubToolChange } = props;
 
-    const SubToolButton: React.FC<{ label: string; iconType: 'move' | 'transform' | 'crop'; tool: TransformSubTool }> = ({ label, iconType, tool }) => (
-        <button
-            onClick={() => onSubToolChange(tool)}
-            className={`flex-1 p-2 rounded-md flex items-center space-x-2 text-sm transition-colors ${activeSubTool === tool ? 'bg-[#2F6FEF] text-white' : 'hover:bg-[#363636] text-gray-300'}`}
-        >
-            <Icon type={iconType} />
-            <span>{label}</span>
-        </button>
-    );
-    
-    const renderSubPanel = () => {
-        switch(activeSubTool) {
-            case 'move': return <MoveToolProperties />;
-            case 'transform': return <TransformToolProperties {...props} />;
-            case 'crop': return <CropToolProperties />;
-            default: return null;
-        }
-    }
+    const subTools: { id: TransformSubTool, label: string, icon: 'move' | 'transform' | 'crop', properties: React.ReactNode }[] = [
+        { id: 'move', label: 'Move', icon: 'move', properties: <MoveToolProperties /> },
+        { id: 'transform', label: 'Transform', icon: 'transform', properties: <TransformToolProperties {...props} /> },
+        { id: 'crop', label: 'Crop', icon: 'crop', properties: <CropToolProperties /> }
+    ];
 
     return (
-        <div className="space-y-4">
-            <div className="flex space-x-2 bg-[#1E1E1E] p-1 rounded-lg">
-                <SubToolButton label="Move" iconType="move" tool="move" />
-                <SubToolButton label="Transform" iconType="transform" tool="transform" />
-                <SubToolButton label="Crop" iconType="crop" tool="crop" />
-            </div>
-            <div className="border-t border-black/20"/>
-            {renderSubPanel()}
+        <div className="space-y-2">
+            {subTools.map(tool => (
+                <div key={tool.id} className="bg-[#1E1E1E] rounded-lg">
+                    <button
+                        onClick={() => onSubToolChange(tool.id)}
+                        className={`w-full p-2 flex items-center space-x-2 text-left transition-colors ${activeSubTool === tool.id ? 'bg-[#363636]' : 'hover:bg-[#363636]/60'}`}
+                    >
+                        <Icon type={tool.icon} />
+                        <span className="flex-1 font-medium">{tool.label}</span>
+                        <Icon type={activeSubTool === tool.id ? 'chevron-down' : 'chevron-right'} className="text-gray-500"/>
+                    </button>
+                    {activeSubTool === tool.id && (
+                        <div className="p-3 border-t border-black/30">
+                            {tool.properties}
+                        </div>
+                    )}
+                </div>
+            ))}
         </div>
-    )
+    );
 }
 
 const PropertiesPanel: React.FC<PropertiesPanelProps> = (props) => {
