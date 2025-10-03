@@ -1,4 +1,5 @@
 
+
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { DocumentSettings, EditorTool, Layer, AutoSelectType } from '../../types';
 import EditorHeader from './EditorHeader';
@@ -76,6 +77,8 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
             blendMode: 'normal',
             imageData: initialImageData,
             thumbnail: generateThumbnail(initialImageData, 48, 40),
+            x: 0,
+            y: 0,
         };
         
         let initialLayers = [backgroundLayer];
@@ -93,6 +96,8 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
                 opacity: 1,
                 blendMode: 'normal',
                 thumbnail: generateThumbnail(imageData, 48, 40),
+                x: 0,
+                y: 0,
             };
             initialLayers.push(imageLayer);
             initialActiveId = imageLayer.id;
@@ -163,6 +168,8 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
         name: `Layer ${currentLayers.length}`,
         isVisible: true, isLocked: false, opacity: 1, blendMode: 'normal',
         imageData: null, thumbnail: generateThumbnail(null, 48, 40),
+        x: 0,
+        y: 0,
     };
     
     const activeIndex = activeLayerId ? currentLayers.findIndex(l => l.id === activeLayerId) : -1;
@@ -184,6 +191,11 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
   
   const handleUpdateLayerProps = (id: string, props: Partial<Layer>) => {
     const newLayers = currentLayers.map(l => l.id === id ? { ...l, ...props } : l);
+    commit(newLayers);
+  };
+  
+  const handleUpdateLayerPosition = (id: string, x: number, y: number) => {
+    const newLayers = currentLayers.map(l => l.id === id ? { ...l, x: Math.round(x), y: Math.round(y) } : l);
     commit(newLayers);
   };
 
@@ -212,7 +224,16 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    if (bottomLayer.imageData) ctx.putImageData(bottomLayer.imageData, 0, 0);
+    // Draw bottom layer at its position
+    if (bottomLayer.imageData) {
+        const bottomCanvas = document.createElement('canvas');
+        bottomCanvas.width = docSettings.width;
+        bottomCanvas.height = docSettings.height;
+        bottomCanvas.getContext('2d')?.putImageData(bottomLayer.imageData, 0, 0);
+        ctx.drawImage(bottomCanvas, bottomLayer.x, bottomLayer.y);
+    }
+
+    // Draw top layer at its position
     if (topLayer.imageData) {
         ctx.globalAlpha = topLayer.opacity;
         ctx.globalCompositeOperation = topLayer.blendMode === 'normal' ? 'source-over' : topLayer.blendMode;
@@ -221,9 +242,12 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
         topCanvas.width = docSettings.width;
         topCanvas.height = docSettings.height;
         topCanvas.getContext('2d')?.putImageData(topLayer.imageData, 0, 0);
-        ctx.drawImage(topCanvas, 0, 0);
+        ctx.drawImage(topCanvas, topLayer.x, topLayer.y);
     }
+    
     const mergedImageData = ctx.getImageData(0, 0, docSettings.width, docSettings.height);
+
+    // The new merged layer will have the position of the bottom layer
     const mergedLayer: Layer = {
         ...bottomLayer,
         imageData: mergedImageData,
@@ -281,7 +305,7 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
           layerCtx.putImageData(layer.imageData, 0, 0);
           ctx.globalAlpha = layer.opacity;
           ctx.globalCompositeOperation = layer.blendMode === 'normal' ? 'source-over' : layer.blendMode;
-          ctx.drawImage(layerCanvas, 0, 0);
+          ctx.drawImage(layerCanvas, layer.x, layer.y);
         }
       }
     });
@@ -349,8 +373,10 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
             activeTool={activeTool} zoom={zoom} onZoom={handleZoom}
             selection={selection} onSelectionChange={handleSelectionChange}
             selectionPreview={selectionPreview}
+            // FIX: Pass `handleSelectionPreview` function to `onSelectionPreview` prop.
             onSelectionPreview={handleSelectionPreview}
             onDrawEnd={handleDrawEnd} onAttemptEditBackgroundLayer={handleAttemptEditBackground}
+            onUpdateLayerPosition={handleUpdateLayerPosition}
             foregroundColor="#000" brushSize={10} brushOpacity={1} brushHardness={1}
             brushShape="round" fontFamily="sans-serif" fontSize={12} textAlign="left"
           />

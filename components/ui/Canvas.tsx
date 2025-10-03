@@ -60,9 +60,6 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
     const lastPos = useRef<{ x: number, y: number } | null>(null);
     const shapeStartPos = useRef<{ x: number, y: number } | null>(null);
 
-    const isMovingSelection = useRef(false);
-    const movingSelection = useRef<{ data: ImageData; startX: number; startY: number, originalRect: { x: number; y: number; width: number; height: number; } } | null>(null);
-
     const [textEdit, setTextEdit] = useState<{ x: number, y: number, value: string } | null>(null);
 
     const getDrawingCtx = () => drawingCanvasRef.current?.getContext('2d', { willReadFrequently: true });
@@ -169,7 +166,7 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
     };
 
     const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-        const isDrawingTool = [EditorTool.PAINT, EditorTool.TYPE, EditorTool.SHAPES].includes(activeTool);
+        const isDrawingTool = [EditorTool.PAINT, EditorTool.TYPE, EditorTool.SHAPES, EditorTool.SELECT].includes(activeTool);
         
         if (isBackground && isDrawingTool) {
             onAttemptEditBackgroundLayer?.();
@@ -191,26 +188,6 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
                 return; // Click is outside selection, do nothing for drawing tools
             }
         }
-
-        if (activeTool === EditorTool.MOVE) {
-            if (selectionRect) {
-                const { x: sx, y: sy, width: sw, height: sh } = selectionRect;
-                if (x >= sx && x <= sx + sw && y >= sy && y <= sy + sh) {
-                    isMovingSelection.current = true;
-                    const drawCtx = getDrawingCtx();
-                    if (drawCtx) {
-                        const selectionData = drawCtx.getImageData(sx, sy, sw, sh);
-                        movingSelection.current = { data: selectionData, startX: x, startY: y, originalRect: selectionRect };
-                        drawCtx.clearRect(sx, sy, sw, sh);
-                        // Do not clear final selection, just the content
-                    }
-                    return;
-                }
-            }
-            // If not moving a selection, it's a pan event. Let it bubble up to CanvasArea.
-            return;
-        }
-
 
         switch (activeTool) {
             case EditorTool.PAINT:
@@ -247,14 +224,6 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
         const rect = canvas.getBoundingClientRect();
         const x = (e.clientX - rect.left) / zoom;
         const y = (e.clientY - rect.top) / zoom;
-
-        if (isMovingSelection.current && movingSelection.current) {
-             const { startX, startY, originalRect } = movingSelection.current;
-            const newX = originalRect.x + (x - startX);
-            const newY = originalRect.y + (y - startY);
-            onSelectionChange({ ...originalRect, x: newX, y: newY });
-            return;
-        }
         
         if (!isDrawing.current) return;
         
@@ -301,17 +270,6 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
 
     const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
         if (isLocked) return;
-        if (isMovingSelection.current && movingSelection.current) {
-            const drawCtx = getDrawingCtx();
-            const { data } = movingSelection.current;
-            if (drawCtx && selectionRect) {
-                drawCtx.putImageData(data, selectionRect.x, selectionRect.y);
-                handleDrawEnd();
-            }
-            isMovingSelection.current = false;
-            movingSelection.current = null;
-            return;
-        }
         
         if (!isDrawing.current) return;
 
@@ -424,7 +382,7 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
-            onMouseLeave={(e) => { if(isDrawing.current || isMovingSelection.current) handleMouseUp(e);}}
+            onMouseLeave={(e) => { if(isDrawing.current) handleMouseUp(e);}}
         />
         <canvas
             ref={interactionCanvasRef}

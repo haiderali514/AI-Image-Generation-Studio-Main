@@ -21,6 +21,7 @@ interface CanvasAreaProps {
   onSelectionPreview: (rect: { x: number; y: number; width: number; height: number; } | null) => void;
   onDrawEnd: (imageData: ImageData) => void;
   onAttemptEditBackgroundLayer: () => void;
+  onUpdateLayerPosition: (id: string, x: number, y: number) => void;
   // Tool props
   foregroundColor: string;
   brushSize: number;
@@ -33,11 +34,18 @@ interface CanvasAreaProps {
 }
 
 const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
-  const { document: documentSettings, layers, activeLayerId, activeTool, zoom, onZoom, selection, onSelectionChange, selectionPreview, onSelectionPreview, onDrawEnd, onAttemptEditBackgroundLayer, ...toolProps } = props;
+  const { document: docSettings, layers, activeLayerId, activeTool, zoom, onZoom, selection, onSelectionChange, selectionPreview, onSelectionPreview, onDrawEnd, onAttemptEditBackgroundLayer, onUpdateLayerPosition, ...toolProps } = props;
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const panStart = useRef({ x: 0, y: 0 });
   const isPanning = useRef(false);
+  
+  // State for layer movement
+  const [movingLayerState, setMovingLayerState] = useState<{ id: string; x: number; y: number } | null>(null);
+  const moveStartInfo = useRef<{ startX: number; startY: number; layerInitialX: number; layerInitialY: number; } | null>(null);
+  const [activeGuides, setActiveGuides] = useState<{ x: number[], y: number[] }>({ x: [], y: [] });
+  const guidesCanvasRef = useRef<HTMLCanvasElement>(null);
+
   const selectionCanvasRef = useRef<HTMLCanvasElement>(null);
   const marchOffset = useRef(0);
   const animationFrameId = useRef<number | undefined>(undefined);
@@ -47,11 +55,11 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
     const container = containerRef.current;
     if (container) {
         const { clientWidth, clientHeight } = container;
-        const initialPanX = (clientWidth - documentSettings.width * zoom) / 2;
-        const initialPanY = (clientHeight - documentSettings.height * zoom) / 2;
+        const initialPanX = (clientWidth - docSettings.width * zoom) / 2;
+        const initialPanY = (clientHeight - docSettings.height * zoom) / 2;
         setPan({ x: initialPanX, y: initialPanY });
     }
-  }, [documentSettings.width, documentSettings.height]); // Only run once on document change
+  }, [docSettings.width, docSettings.height]); // Only run once on document change
 
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -87,7 +95,23 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.target !== e.currentTarget) return;
+    const activeLayer = layers.find(l => l.id === activeLayerId);
+
+    // Layer Move
+    if (activeTool === EditorTool.MOVE && activeLayer && !activeLayer.isLocked && !activeLayer.isBackground && e.button === 0 && !e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        setMovingLayerState({ id: activeLayer.id, x: activeLayer.x, y: activeLayer.y });
+        moveStartInfo.current = {
+            startX: e.clientX,
+            startY: e.clientY,
+            layerInitialX: activeLayer.x,
+            layerInitialY: activeLayer.y,
+        };
+        if (containerRef.current) containerRef.current.style.cursor = 'move';
+        return;
+    }
+
     // Pan with Spacebar + Click or Middle Mouse Button
     if (e.button === 1 || e.buttons === 4 || (e.buttons === 1 && e.shiftKey)) { // Using Shift+Click for panning as Spacebar is hard to capture
       e.preventDefault();
@@ -98,6 +122,57 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
   };
   
   const handleMouseMove = (e: React.MouseEvent) => {
+    // Layer Move
+    if (movingLayerState && moveStartInfo.current) {
+        e.preventDefault();
+        const dx = (e.clientX - moveStartInfo.current.startX) / zoom;
+        const dy = (e.clientY - moveStartInfo.current.startY) / zoom;
+        
+        let newX = moveStartInfo.current.layerInitialX + dx;
+        let newY = moveStartInfo.current.layerInitialY + dy;
+        
+        // --- SNAPPING LOGIC ---
+        const SNAP_THRESHOLD = 5 / zoom;
+        const movingLayerBounds = {
+            top: newY, left: newX,
+            bottom: newY + docSettings.height, right: newX + docSettings.width,
+            hCenter: newX + docSettings.width / 2, vCenter: newY + docSettings.height / 2,
+        };
+
+        const snapPoints = {
+            x: [0, docSettings.width / 2, docSettings.width],
+            y: [0, docSettings.height / 2, docSettings.height],
+        };
+
+        layers.forEach(layer => {
+            if (layer.id !== movingLayerState.id && layer.isVisible && !layer.isBackground) {
+                snapPoints.x.push(layer.x, layer.x + docSettings.width / 2, layer.x + docSettings.width);
+                snapPoints.y.push(layer.y, layer.y + docSettings.height / 2, layer.y + docSettings.height);
+            }
+        });
+
+        const newGuides = { x: [] as number[], y: [] as number[] };
+        
+        // Check horizontal snaps
+        for (const targetX of snapPoints.x) {
+            if (Math.abs(movingLayerBounds.left - targetX) < SNAP_THRESHOLD) { newX = targetX; newGuides.x.push(targetX); break; }
+            if (Math.abs(movingLayerBounds.hCenter - targetX) < SNAP_THRESHOLD) { newX = targetX - docSettings.width / 2; newGuides.x.push(targetX); break; }
+            if (Math.abs(movingLayerBounds.right - targetX) < SNAP_THRESHOLD) { newX = targetX - docSettings.width; newGuides.x.push(targetX); break; }
+        }
+        
+        // Check vertical snaps
+        for (const targetY of snapPoints.y) {
+            if (Math.abs(movingLayerBounds.top - targetY) < SNAP_THRESHOLD) { newY = targetY; newGuides.y.push(targetY); break; }
+            if (Math.abs(movingLayerBounds.vCenter - targetY) < SNAP_THRESHOLD) { newY = targetY - docSettings.height / 2; newGuides.y.push(targetY); break; }
+            if (Math.abs(movingLayerBounds.bottom - targetY) < SNAP_THRESHOLD) { newY = targetY - docSettings.height; newGuides.y.push(targetY); break; }
+        }
+
+        setActiveGuides(newGuides);
+        setMovingLayerState({ ...movingLayerState, x: newX, y: newY });
+        return;
+    }
+    
+    // Panning
     if (isPanning.current) {
       e.preventDefault();
       setPan({
@@ -108,6 +183,16 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
   };
 
   const handleMouseUp = (e: React.MouseEvent) => {
+    // End Layer Move
+    if (movingLayerState) {
+        onUpdateLayerPosition(movingLayerState.id, movingLayerState.x, movingLayerState.y);
+        setMovingLayerState(null);
+        moveStartInfo.current = null;
+        setActiveGuides({ x: [], y: [] });
+        if (containerRef.current) containerRef.current.style.cursor = 'default';
+    }
+
+    // End Panning
     if (isPanning.current) {
         isPanning.current = false;
         if (containerRef.current) containerRef.current.style.cursor = 'default';
@@ -148,10 +233,45 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
     };
   }, [selection, selectionPreview, zoom]);
   
-  const docBg = documentSettings.background === 'Custom' ? documentSettings.customBgColor : documentSettings.background.toLowerCase();
+   useEffect(() => {
+    const canvas = guidesCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!movingLayerState) return;
+
+    ctx.strokeStyle = '#FF00FF'; // Pink
+    ctx.lineWidth = 1 / zoom;
+    ctx.setLineDash([5 / zoom, 3 / zoom]);
+
+    const extend = 10000; // Extend guides far off-canvas
+
+    activeGuides.x.forEach(x => {
+        ctx.beginPath();
+        ctx.moveTo(x, -extend);
+        ctx.lineTo(x, docSettings.height + extend);
+        ctx.stroke();
+    });
+    activeGuides.y.forEach(y => {
+        ctx.beginPath();
+        ctx.moveTo(-extend, y);
+        ctx.lineTo(docSettings.width + extend, y);
+        ctx.stroke();
+    });
+
+  }, [activeGuides, zoom, docSettings, movingLayerState]);
   
   const activeLayer = layers.find(l => l.id === activeLayerId);
   const showTransformControls = activeTool === EditorTool.MOVE && activeLayer && activeLayer.imageData !== null && !activeLayer.isBackground;
+
+  const getLayerPosition = (layer: Layer) => {
+    if (movingLayerState && movingLayerState.id === layer.id) {
+        return { x: movingLayerState.x, y: movingLayerState.y };
+    }
+    return { x: layer.x, y: layer.y };
+  };
 
   return (
     <div 
@@ -161,6 +281,7 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
          backgroundColor: '#181818',
          backgroundImage: 'linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px)',
          backgroundSize: '20px 20px',
+         cursor: isPanning.current ? 'grabbing' : movingLayerState ? 'move' : 'default',
       }}
       onWheel={handleWheel}
       onMouseDown={handleMouseDown}
@@ -172,23 +293,30 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
         className="relative transition-transform duration-150 ease-out"
         style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
       >
-        <div className="shadow-2xl bg-black relative" style={{ width: documentSettings.width, height: documentSettings.height }}>
-            
-            {layers.map(layer => (
+        <div className="shadow-2xl bg-black relative" style={{ width: docSettings.width, height: docSettings.height }}>
+            {layers.map(layer => {
+              const pos = getLayerPosition(layer);
+              const isMovingThisLayer = movingLayerState?.id === layer.id;
+              return (
                 <div key={layer.id}
                      style={{
                         display: layer.isVisible ? 'block' : 'none',
-                        opacity: layer.isBackground ? 1 : layer.opacity, // Background doesn't have opacity control
+                        opacity: layer.isBackground ? 1 : layer.opacity,
                         mixBlendMode: layer.isBackground ? 'normal' : layer.blendMode,
-                        pointerEvents: (layer.id === activeLayerId && !isPanning.current) ? 'auto' : 'none'
+                        position: 'absolute',
+                        top: `${pos.y}px`,
+                        left: `${pos.x}px`,
+                        width: `${docSettings.width}px`,
+                        height: `${docSettings.height}px`,
+                        outline: isMovingThisLayer ? `${1/zoom}px dashed #FF00FF` : 'none',
+                        outlineOffset: `${1/zoom}px`,
                      }}
-                     className="absolute top-0 left-0 w-full h-full"
                 >
                     <Canvas
-                        width={documentSettings.width}
-                        height={documentSettings.height}
+                        width={docSettings.width}
+                        height={docSettings.height}
                         activeTool={activeTool}
-                        isLocked={layer.isLocked}
+                        isLocked={layer.isLocked || isMovingThisLayer}
                         isBackground={layer.isBackground}
                         onAttemptEditBackgroundLayer={onAttemptEditBackgroundLayer}
                         selectionRect={selection?.rect || null}
@@ -200,14 +328,21 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
                         {...toolProps}
                     />
                 </div>
-            ))}
+              )
+            })}
              <canvas
-              ref={selectionCanvasRef}
-              width={documentSettings.width}
-              height={documentSettings.height}
+              ref={guidesCanvasRef}
+              width={docSettings.width}
+              height={docSettings.height}
               className="absolute top-0 left-0 pointer-events-none"
             />
-            {showTransformControls && <TransformControls width={documentSettings.width} height={documentSettings.height} zoom={zoom} />}
+             <canvas
+              ref={selectionCanvasRef}
+              width={docSettings.width}
+              height={docSettings.height}
+              className="absolute top-0 left-0 pointer-events-none"
+            />
+            {showTransformControls && !movingLayerState && <TransformControls width={docSettings.width} height={docSettings.height} zoom={zoom} />}
         </div>
       </div>
       {showTransformControls && <FloatingActionBar />}

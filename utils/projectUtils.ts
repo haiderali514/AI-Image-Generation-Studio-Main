@@ -44,6 +44,8 @@ export const loadProject = async (file: File): Promise<{ documentSettings: Docum
               : null;
             return {
               ...sl,
+              x: sl.x ?? 0,
+              y: sl.y ?? 0,
               imageData,
               thumbnail: generateThumbnail(imageData, 48, 40),
             };

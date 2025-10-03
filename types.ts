@@ -67,6 +67,8 @@ export interface Layer {
   blendMode: BlendMode;
   thumbnail?: string;
   imageData: ImageData | null;
+  x: number;
+  y: number;
 }
 
 /**
