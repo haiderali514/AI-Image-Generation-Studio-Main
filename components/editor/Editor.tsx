@@ -349,7 +349,7 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
             activeTool={activeTool} zoom={zoom} onZoom={handleZoom}
             selection={selection} onSelectionChange={handleSelectionChange}
             selectionPreview={selectionPreview}
-            onSelectionPreview={onSelectionPreview}
+            onSelectionPreview={handleSelectionPreview}
             onDrawEnd={handleDrawEnd} onAttemptEditBackgroundLayer={handleAttemptEditBackground}
             foregroundColor="#000" brushSize={10} brushOpacity={1} brushHardness={1}
             brushShape="round" fontFamily="sans-serif" fontSize={12} textAlign="left"
