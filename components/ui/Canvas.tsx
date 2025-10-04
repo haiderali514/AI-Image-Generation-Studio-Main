@@ -1,16 +1,6 @@
 
 import React, { useRef, useEffect, useImperativeHandle, useState, forwardRef } from 'react';
-import { EditorTool, BrushShape, TextAlign, AnySubTool, Layer } from '../../types';
-
-interface MoveSession {
-    layerId: string;
-    startMouseX: number;
-    startMouseY: number;
-    layerStartX: number;
-    layerStartY: number;
-    currentMouseX: number;
-    currentMouseY: number;
-}
+import { EditorTool, BrushShape, TextAlign, AnySubTool, Layer, MoveSession } from '../../types';
 
 // FIX: Export CanvasHandle type for use in parent components via refs.
 export interface CanvasHandle {
@@ -75,7 +65,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>((props, ref) => {
     } = props;
     
     const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
-    const interactionCanvasRef = useRef<HTMLCanvasElement>(null);
+    const interactionCanvasRef = useRef<HTMLDivElement>(null);
     const hitTestCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
     const isDrawing = useRef(false);
@@ -197,7 +187,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>((props, ref) => {
     }
 
 
-    const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
         if (isSpacebarDown || (activeTool === EditorTool.TRANSFORM && activeSubTool === 'transform')) return;
 
         const isDrawingTool = [EditorTool.PAINT, EditorTool.TYPE, EditorTool.SHAPES, EditorTool.SELECT].includes(activeTool);
@@ -257,7 +247,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>((props, ref) => {
         }
     };
 
-    const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
         if (isSpacebarDown) return;
         if (moveSession) {
             onMoveUpdate(e.clientX, e.clientY);
@@ -304,7 +294,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>((props, ref) => {
         }
     };
 
-    const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const handleMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
         if (moveSession) {
             onMoveCommit(e.clientX, e.clientY);
             return;
@@ -415,7 +405,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>((props, ref) => {
             onMouseUp={handleMouseUp}
             onMouseLeave={(e) => { 
                 if (moveSession) onMoveCommit(e.clientX, e.clientY)
-                if(isDrawing.current) handleMouseUp(e as any);
+                if(isDrawing.current) handleMouseUp(e);
             }}
         />
         {textEdit && (

@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { EditorTool, DocumentSettings, Layer, BrushShape, TextAlign, AnySubTool, TransformSession } from '../../types';
+import { EditorTool, DocumentSettings, Layer, BrushShape, TextAlign, AnySubTool, TransformSession, SnapLine } from '../../types';
 import Canvas from '../ui/Canvas';
 import TransformControls from './TransformControls';
 import { MoveActionBar, TransformActionBar, CropActionBar, AddImageActionBar } from './FloatingActionBar';
@@ -55,10 +55,11 @@ interface CanvasAreaProps {
   fontFamily: string;
   fontSize: number;
   textAlign: TextAlign;
+  snapLines: SnapLine[];
 }
 
 const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
-  const { document: docSettings, layers, activeLayerId, activeTool, activeSubTool, zoom, onZoom, viewResetKey, selection, onSelectionChange, selectionPreview, onSelectionPreview, onDrawEnd, onAttemptEditBackgroundLayer, onSelectLayer, moveSession, onMoveStart, onMoveUpdate, onMoveCommit, transformSession, onTransformStart, onTransformUpdate, onTransformCommit, onTransformCancel, ...toolProps } = props;
+  const { document: docSettings, layers, activeLayerId, activeTool, activeSubTool, zoom, onZoom, viewResetKey, selection, onSelectionChange, selectionPreview, onSelectionPreview, onDrawEnd, onAttemptEditBackgroundLayer, onSelectLayer, moveSession, onMoveStart, onMoveUpdate, onMoveCommit, transformSession, onTransformStart, onTransformUpdate, onTransformCommit, onTransformCancel, snapLines, ...toolProps } = props;
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const panStart = useRef({ x: 0, y: 0 });
@@ -67,6 +68,7 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
   
   const displayCanvasRef = useRef<HTMLCanvasElement>(null);
   const selectionCanvasRef = useRef<HTMLCanvasElement>(null);
+  const snapLinesCanvasRef = useRef<HTMLCanvasElement>(null);
   const marchOffset = useRef(0);
   const animationFrameId = useRef<number | undefined>(undefined);
 
@@ -106,25 +108,14 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
       ctx.globalAlpha = layerToRender.opacity;
       ctx.globalCompositeOperation = layerToRender.isBackground ? 'source-over' : (layerToRender.blendMode === 'normal' ? 'source-over' : layerToRender.blendMode);
       
-      let renderX = layerToRender.x;
-      let renderY = layerToRender.y;
-
-      // Real-time move preview
-      if (moveSession && moveSession.layerId === layer.id) {
-        const deltaX = (moveSession.currentMouseX - moveSession.startMouseX) / zoom;
-        const deltaY = (moveSession.currentMouseY - moveSession.startMouseY) / zoom;
-        renderX = moveSession.layerStartX + deltaX;
-        renderY = moveSession.layerStartY + deltaY;
-      }
-      
-      ctx.translate(renderX, renderY);
+      ctx.translate(layerToRender.x, layerToRender.y);
       ctx.rotate(layerToRender.rotation * Math.PI / 180);
       ctx.scale(layerToRender.scaleX, layerToRender.scaleY);
 
       ctx.drawImage(offscreenCanvas, -layerToRender.width / 2, -layerToRender.height / 2);
       ctx.restore();
     });
-  }, [layers, docSettings.width, docSettings.height, transformSession, moveSession, zoom]);
+  }, [layers, docSettings.width, docSettings.height, transformSession]);
 
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -271,6 +262,35 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
     };
   }, [selection, selectionPreview, zoom]);
   
+  // New effect for drawing snap lines
+  useEffect(() => {
+    const canvas = snapLinesCanvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!ctx || !canvas) return;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (snapLines.length > 0) {
+        ctx.save();
+        ctx.strokeStyle = '#FF00FF'; // Pink
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        
+        snapLines.forEach(line => {
+            ctx.beginPath();
+            if (line.type === 'vertical') {
+                ctx.moveTo(line.position + 0.5, line.start);
+                ctx.lineTo(line.position + 0.5, line.end);
+            } else { // horizontal
+                ctx.moveTo(line.start, line.position + 0.5);
+                ctx.lineTo(line.end, line.position + 0.5);
+            }
+            ctx.stroke();
+        });
+        ctx.restore();
+    }
+  }, [snapLines]);
+
   const activeLayer = layers.find(l => l.id === activeLayerId);
   const showTransformControls = activeTool === EditorTool.TRANSFORM && activeSubTool === 'transform' && activeLayer && !activeLayer.isBackground && !activeLayer.isLocked;
   
@@ -357,6 +377,12 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
             )}
              <canvas
               ref={selectionCanvasRef}
+              width={docSettings.width}
+              height={docSettings.height}
+              className="absolute top-0 left-0 pointer-events-none"
+            />
+             <canvas
+              ref={snapLinesCanvasRef}
               width={docSettings.width}
               height={docSettings.height}
               className="absolute top-0 left-0 pointer-events-none"

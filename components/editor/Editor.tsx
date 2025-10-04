@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { DocumentSettings, EditorTool, Layer, TransformSubTool, BrushShape, PaintSubTool, AnySubTool, TransformSession } from '../../types';
+import { DocumentSettings, EditorTool, Layer, TransformSubTool, BrushShape, PaintSubTool, AnySubTool, TransformSession, MoveSession, SnapLine } from '../../types';
 import EditorHeader from './EditorHeader';
 import CanvasArea from './CanvasArea';
 import Toolbar from './Toolbar';
@@ -16,16 +16,6 @@ interface EditorProps {
   onClose: () => void;
   onNew: () => void;
   initialFile?: File | null;
-}
-
-interface MoveSession {
-    layerId: string;
-    startMouseX: number;
-    startMouseY: number;
-    layerStartX: number;
-    layerStartY: number;
-    currentMouseX: number;
-    currentMouseY: number;
 }
 
 const MAX_ZOOM = 5; // 500%
@@ -50,6 +40,7 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [transformSession, setTransformSession] = useState<TransformSession | null>(null);
   const [moveSession, setMoveSession] = useState<MoveSession | null>(null);
+  const [snapLines, setSnapLines] = useState<SnapLine[]>([]);
 
   // Tool settings state
   const [foregroundColor, setForegroundColor] = useState('#000000');
@@ -474,22 +465,116 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
   };
 
   const handleMoveUpdate = (mouseX: number, mouseY: number) => {
-      if (moveSession) {
-          setMoveSession(prev => prev ? { ...prev, currentMouseX: mouseX, currentMouseY: mouseY } : null);
-      }
+    if (!moveSession) return;
+
+    const deltaX = (mouseX - moveSession.startMouseX) / zoom;
+    const deltaY = (mouseY - moveSession.startMouseY) / zoom;
+    let newX = moveSession.layerStartX + deltaX;
+    let newY = moveSession.layerStartY + deltaY;
+
+    const movingLayer = currentLayers.find(l => l.id === moveSession.layerId);
+    if (!movingLayer) return;
+
+    const SNAP_THRESHOLD = 6 / zoom;
+    const newSnapLines: SnapLine[] = [];
+
+    const getBounds = (layer: Layer) => ({
+      left: layer.x - (layer.width * layer.scaleX) / 2,
+      right: layer.x + (layer.width * layer.scaleX) / 2,
+      top: layer.y - (layer.height * layer.scaleY) / 2,
+      bottom: layer.y + (layer.height * layer.scaleY) / 2,
+      centerX: layer.x,
+      centerY: layer.y,
+    });
+    
+    // --- Snap to other layers ---
+    const movingBounds = getBounds({ ...movingLayer, x: newX, y: newY });
+    const targetLayers = currentLayers.filter(l => l.id !== moveSession.layerId && l.isVisible && !l.isBackground);
+
+    targetLayers.forEach(targetLayer => {
+        const targetBounds = getBounds(targetLayer);
+        
+        const vPoints = [
+            { moving: movingBounds.left, target: targetBounds.left }, { moving: movingBounds.centerX, target: targetBounds.centerX },
+            { moving: movingBounds.right, target: targetBounds.right }, { moving: movingBounds.left, target: targetBounds.right },
+            { moving: movingBounds.right, target: targetBounds.left },
+        ];
+        
+        for (const p of vPoints) {
+            if (Math.abs(p.moving - p.target) < SNAP_THRESHOLD) {
+                newX += p.target - p.moving;
+                const currentMovingBounds = getBounds({ ...movingLayer, x: newX, y: newY });
+                newSnapLines.push({ type: 'vertical', position: p.target, start: Math.min(currentMovingBounds.top, targetBounds.top), end: Math.max(currentMovingBounds.bottom, targetBounds.bottom) });
+                break; 
+            }
+        }
+        
+        const hPoints = [
+            { moving: movingBounds.top, target: targetBounds.top }, { moving: movingBounds.centerY, target: targetBounds.centerY },
+            { moving: movingBounds.bottom, target: targetBounds.bottom }, { moving: movingBounds.top, target: targetBounds.bottom },
+            { moving: movingBounds.bottom, target: targetBounds.top },
+        ];
+
+        for (const p of hPoints) {
+            if (Math.abs(p.moving - p.target) < SNAP_THRESHOLD) {
+                newY += p.target - p.moving;
+                const currentMovingBounds = getBounds({ ...movingLayer, x: newX, y: newY });
+                newSnapLines.push({ type: 'horizontal', position: p.target, start: Math.min(currentMovingBounds.left, targetBounds.left), end: Math.max(currentMovingBounds.right, targetBounds.right) });
+                break;
+            }
+        }
+    });
+
+    // --- Snap to Canvas Boundaries ---
+    const canvasMovingBounds = getBounds({ ...movingLayer, x: newX, y: newY });
+    const canvasBounds = { left: 0, right: docSettings.width, top: 0, bottom: docSettings.height, centerX: docSettings.width / 2, centerY: docSettings.height / 2 };
+
+    const vCanvasPoints = [
+        { moving: canvasMovingBounds.left, target: canvasBounds.left }, { moving: canvasMovingBounds.centerX, target: canvasBounds.centerX },
+        { moving: canvasMovingBounds.right, target: canvasBounds.right },
+    ];
+    for (const p of vCanvasPoints) {
+        if (Math.abs(p.moving - p.target) < SNAP_THRESHOLD) {
+            newX += p.target - p.moving;
+            newSnapLines.push({ type: 'vertical', position: p.target, start: 0, end: docSettings.height });
+            break;
+        }
+    }
+
+    const finalMovingBounds = getBounds({ ...movingLayer, x: newX, y: newY });
+    const hCanvasPoints = [
+        { moving: finalMovingBounds.top, target: canvasBounds.top }, { moving: finalMovingBounds.centerY, target: canvasBounds.centerY },
+        { moving: finalMovingBounds.bottom, target: canvasBounds.bottom },
+    ];
+    for (const p of hCanvasPoints) {
+        if (Math.abs(p.moving - p.target) < SNAP_THRESHOLD) {
+            newY += p.target - p.moving;
+            newSnapLines.push({ type: 'horizontal', position: p.target, start: 0, end: docSettings.width });
+            break;
+        }
+    }
+
+    setSnapLines(newSnapLines);
+    handleUpdateLayerTransform(moveSession.layerId, { x: newX, y: newY });
+    setMoveSession(prev => prev ? { ...prev, currentMouseX: mouseX, currentMouseY: mouseY } : null);
   };
 
-  const handleMoveCommit = (finalMouseX: number, finalMouseY: number) => {
+  const handleMoveCommit = () => {
     if (!moveSession) return;
-    const deltaX = (finalMouseX - moveSession.startMouseX) / zoom;
-    const deltaY = (finalMouseY - moveSession.startMouseY) / zoom;
-    const newX = moveSession.layerStartX + deltaX;
-    const newY = moveSession.layerStartY + deltaY;
-
-    if (Math.round(newX) !== moveSession.layerStartX || Math.round(newY) !== moveSession.layerStartY) {
-        handleUpdateLayerProps(moveSession.layerId, { x: newX, y: newY });
+    
+    const finalLayer = currentLayers.find(l => l.id === moveSession.layerId);
+    if (!finalLayer) {
+        setMoveSession(null);
+        setSnapLines([]);
+        return;
     }
+    
+    if (Math.round(finalLayer.x) !== moveSession.layerStartX || Math.round(finalLayer.y) !== moveSession.layerStartY) {
+        handleUpdateLayerProps(moveSession.layerId, { x: finalLayer.x, y: finalLayer.y });
+    }
+    
     setMoveSession(null);
+    setSnapLines([]);
   };
   // --- END MOVE TOOL LOGIC ---
 
@@ -662,6 +747,7 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
             fontFamily="sans-serif"
             fontSize={48}
             textAlign="left"
+            snapLines={snapLines}
           />
         </main>
         <LayersPanel

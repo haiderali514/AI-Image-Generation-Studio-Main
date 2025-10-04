@@ -105,6 +105,24 @@ export interface TransformSession {
     startMouse: { x: number; y: number };
 }
 
+export interface SnapLine {
+  type: 'horizontal' | 'vertical';
+  position: number;
+  start: number;
+  end: number;
+}
+
+export interface MoveSession {
+    layerId: string;
+    startMouseX: number;
+    startMouseY: number;
+    layerStartX: number;
+    layerStartY: number;
+    currentMouseX: number;
+    currentMouseY: number;
+}
+
+
 /**
  * Defines the possible text alignment options for the Text tool.
  */
