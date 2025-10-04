@@ -1,12 +1,17 @@
-
-
 import React from 'react';
 import { EditorTool } from '../../types';
 import Icon from '../ui/Icon';
+import ColorPanel from './ColorPanel';
 
 interface ToolbarProps {
   activeTool: EditorTool;
   onToolSelect: (tool: EditorTool) => void;
+  foregroundColor: string;
+  backgroundColor: string;
+  onSetForegroundColor: (color: string) => void;
+  onSetBackgroundColor: (color: string) => void;
+  onSwapColors: () => void;
+  onResetColors: () => void;
 }
 
 const toolConfig: { tool: EditorTool, label: string, icon: React.ReactNode }[] = [
@@ -45,10 +50,10 @@ const ToolButton: React.FC<{
   );
 };
 
-const Toolbar: React.FC<ToolbarProps> = ({ activeTool, onToolSelect }) => {
+const Toolbar: React.FC<ToolbarProps> = ({ activeTool, onToolSelect, ...colorProps }) => {
   return (
-    <aside className="w-20 hover:w-60 bg-[#2D2D2D] p-3 border-r border-black/20 flex flex-col flex-shrink-0 z-10 transition-all duration-300 ease-in-out group overflow-y-auto">
-      <div className="space-y-1">
+    <aside className="w-20 hover:w-60 bg-[#2D2D2D] p-3 border-r border-black/20 flex flex-col flex-shrink-0 z-10 transition-all duration-300 ease-in-out group">
+      <div className="flex-1 space-y-1 overflow-y-auto">
         {toolConfig.map(item => (
           <ToolButton
             key={item.tool}
@@ -58,6 +63,9 @@ const Toolbar: React.FC<ToolbarProps> = ({ activeTool, onToolSelect }) => {
             onClick={() => onToolSelect(item.tool)}
           />
         ))}
+      </div>
+       <div className="mt-4 flex justify-center group-hover:justify-start">
+        <ColorPanel {...colorProps} />
       </div>
     </aside>
   );

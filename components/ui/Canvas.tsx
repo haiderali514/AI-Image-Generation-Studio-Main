@@ -1,6 +1,5 @@
-
 import React, { useRef, useEffect, useImperativeHandle, useState } from 'react';
-import { EditorTool, BrushShape, TextAlign } from '../../types';
+import { EditorTool, BrushShape, TextAlign, PaintSubTool } from '../../types';
 
 export interface CanvasHandle {
   getCanvas: () => HTMLCanvasElement | null;
@@ -18,6 +17,7 @@ interface CanvasProps {
   fontFamily: string;
   textAlign: TextAlign;
   activeTool: EditorTool;
+  activePaintSubTool: PaintSubTool;
   isLocked: boolean;
   isBackground?: boolean;
   onAttemptEditBackgroundLayer?: () => void;
@@ -48,7 +48,7 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
   (props, ref) => {
     const { 
         width, height, foregroundColor, brushSize, brushOpacity, brushHardness, 
-        brushShape, fontSize, fontFamily, textAlign, activeTool, isLocked, isBackground,
+        brushShape, fontSize, fontFamily, textAlign, activeTool, activePaintSubTool, isLocked, isBackground,
         onAttemptEditBackgroundLayer, selectionRect, onSelectionChange, onSelectionPreview, 
         imageDataToRender, onDrawEnd, zoom = 1 
     } = props;
@@ -151,7 +151,7 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
       const transparentColor = `rgba(${r}, ${g}, ${b}, 0)`;
 
       radgrad.addColorStop(0, colorWithOpacity);
-      radgrad.addColorStop(Math.max(0.01, brushHardness), colorWithOpacity);
+      radgrad.addColorStop(Math.max(0, brushHardness), colorWithOpacity);
       radgrad.addColorStop(1, transparentColor);
 
       ctx.fillStyle = radgrad;
@@ -201,8 +201,7 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
                         drawCtx.rect(selectionRect.x, selectionRect.y, selectionRect.width, selectionRect.height);
                         drawCtx.clip();
                     }
-                    // For now, assume PAINT is brush. A future implementation could check for an 'eraser' sub-tool.
-                    drawCtx.globalCompositeOperation = 'source-over';
+                    drawCtx.globalCompositeOperation = activePaintSubTool === 'eraser' ? 'destination-out' : 'source-over';
                     stamp(drawCtx, x, y);
                 }
                 break;

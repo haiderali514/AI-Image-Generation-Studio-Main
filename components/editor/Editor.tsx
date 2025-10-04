@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { DocumentSettings, EditorTool, Layer, TransformSubTool } from '../../types';
+import { DocumentSettings, EditorTool, Layer, TransformSubTool, BrushShape, PaintSubTool } from '../../types';
 import EditorHeader from './EditorHeader';
 import CanvasArea from './CanvasArea';
 import Toolbar from './Toolbar';
@@ -31,6 +31,7 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
   const [docSettings, setDocSettings] = useState(initialDocumentSettings);
   const [activeTool, setActiveTool] = useState<EditorTool>(EditorTool.TRANSFORM);
   const [activeSubTool, setActiveSubTool] = useState<TransformSubTool>('move');
+  const [activePaintSubTool, setActivePaintSubTool] = useState<PaintSubTool>('brush');
   const [zoom, setZoom] = useState(1);
   const [selection, setSelection] = useState<{ rect: { x: number; y: number; width: number; height: number; } } | null>(null);
   const [selectionPreview, setSelectionPreview] = useState<{ rect: { x: number; y: number; width: number; height: number; } } | null>(null);
@@ -44,6 +45,16 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [transformSession, setTransformSession] = useState<TransformSession | null>(null);
+
+  // Tool settings state
+  const [foregroundColor, setForegroundColor] = useState('#000000');
+  const [backgroundColor, setBackgroundColor] = useState('#ffffff');
+  const [brushSettings, setBrushSettings] = useState({
+    size: 30,
+    hardness: 0.8,
+    opacity: 1,
+    shape: 'round' as BrushShape,
+  });
 
   const currentLayers = useMemo(() => history[historyIndex] ?? [], [history, historyIndex]);
   const activeLayer = useMemo(() => currentLayers.find(l => l.id === activeLayerId), [currentLayers, activeLayerId]);
@@ -280,6 +291,9 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
     if (tool === EditorTool.TRANSFORM) {
         setActiveSubTool('move');
     }
+    if (tool === EditorTool.PAINT) {
+        setActivePaintSubTool('brush');
+    }
     if (tool === activeTool) {
         setIsPropertiesPanelOpen(prev => !prev);
     } else { 
@@ -506,7 +520,23 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
         zoom={zoom} onZoomChange={setZoom}
       />
       <div className="flex flex-1 overflow-hidden">
-        <Toolbar activeTool={activeTool} onToolSelect={handleToolSelect} />
+        <Toolbar
+          activeTool={activeTool}
+          onToolSelect={handleToolSelect}
+          foregroundColor={foregroundColor}
+          backgroundColor={backgroundColor}
+          onSetForegroundColor={setForegroundColor}
+          onSetBackgroundColor={setBackgroundColor}
+          onSwapColors={() => {
+            const temp = foregroundColor;
+            setForegroundColor(backgroundColor);
+            setBackgroundColor(temp);
+          }}
+          onResetColors={() => {
+            setForegroundColor('#000000');
+            setBackgroundColor('#ffffff');
+          }}
+        />
         {isPropertiesPanelOpen && (
             <PropertiesPanel 
               activeTool={activeTool}
@@ -514,8 +544,12 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
               onSubToolChange={setActiveSubTool}
               autoSelect={'Layer'} onAutoSelectChange={() => {}}
               onClose={() => setIsPropertiesPanelOpen(false)}
+              activePaintSubTool={activePaintSubTool}
+              onPaintSubToolChange={setActivePaintSubTool}
               transformProps={transformProps}
               onImageAdded={handleImageAdded}
+              brushSettings={brushSettings}
+              onBrushSettingsChange={setBrushSettings}
             />
         )}
         <main className="flex-1 flex flex-col bg-[#181818] overflow-hidden">
@@ -536,8 +570,15 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
             onTransformCommit={handleTransformCommit}
             onTransformCancel={handleTransformCancel}
             // Tool props
-            foregroundColor="#000" brushSize={10} brushOpacity={1} brushHardness={1}
-            brushShape="round" fontFamily="sans-serif" fontSize={12} textAlign="left"
+            activePaintSubTool={activePaintSubTool}
+            foregroundColor={foregroundColor}
+            brushSize={brushSettings.size}
+            brushOpacity={brushSettings.opacity}
+            brushHardness={brushSettings.hardness}
+            brushShape={brushSettings.shape}
+            fontFamily="sans-serif"
+            fontSize={12}
+            textAlign="left"
           />
         </main>
         <LayersPanel

@@ -84,6 +84,8 @@ export type TextAlign = 'left' | 'center' | 'right';
  */
 export type BrushShape = 'round' | 'square';
 
+export type PaintSubTool = 'brush' | 'eraser';
+
 // --- Project Save/Load Types ---
 
 /**
