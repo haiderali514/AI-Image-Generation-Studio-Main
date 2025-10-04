@@ -1,15 +1,14 @@
-
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { DocumentSettings, EditorTool, Layer, TransformSubTool, BrushShape, PaintSubTool, AnySubTool, TransformSession, MoveSession, SnapLine, TransformMode } from '../../types';
+import { DocumentSettings, EditorTool, Layer, TransformSubTool, BrushShape, PaintSubTool, AnySubTool, TransformSession, MoveSession, SnapLine, TransformMode, HistoryState } from '../../types';
 import EditorHeader from './EditorHeader';
 import CanvasArea from './CanvasArea';
-import Toolbar from './Toolbar';
-import PropertiesPanel from './PropertiesPanel';
 import ConfirmModal from '../modals/ConfirmModal';
 import ExportModal, { ExportFormat } from '../modals/ExportModal';
 import { generateThumbnail, fileToBase64, base64ToImageData } from '../../utils/imageUtils';
 import { saveProject, loadProject } from '../../utils/projectUtils';
-import LayersPanel from './LayersPanel';
+import RightSidebarContainer from './RightSidebarContainer';
+import LeftSidebar from './LeftSidebar';
+import ContextualTaskbar from './contextualBars/ContextualTaskbar';
 
 interface EditorProps {
   document: DocumentSettings;
@@ -21,17 +20,20 @@ interface EditorProps {
 const MAX_ZOOM = 5; // 500%
 const MIN_ZOOM = 0.01; // 1%
 
-// Helper function to rotate a point around an origin
-const rotatePoint = (point: { x: number; y: number }, origin: { x: number; y: number }, angle: number) => {
-    const rad = angle * Math.PI / 180;
-    const cos = Math.cos(rad);
-    const sin = Math.sin(rad);
-    const dx = point.x - origin.x;
-    const dy = point.y - origin.y;
-    const newX = dx * cos - dy * sin + origin.x;
-    const newY = dx * sin + dy * cos + origin.y;
-    return { x: newX, y: newY };
+// Helper vector math functions for transformations
+const vec = {
+    sub: (a: {x:number, y:number}, b: {x:number, y:number}) => ({ x: a.x - b.x, y: a.y - b.y }),
+    add: (a: {x:number, y:number}, b: {x:number, y:number}) => ({ x: a.x + b.x, y: a.y + b.y }),
+    len: (a: {x:number, y:number}) => Math.hypot(a.x, a.y),
+    scale: (a: {x:number, y:number}, s: number) => ({ x: a.x * s, y: a.y * s }),
+    dot: (a: {x:number, y:number}, b: {x:number, y:number}) => a.x * b.x + a.y * b.y,
+    angle: (a: {x:number, y:number}) => Math.atan2(a.y, a.x),
+    rotate: (p: {x:number, y:number}, angleRad: number) => ({
+        x: p.x * Math.cos(angleRad) - p.y * Math.sin(angleRad),
+        y: p.x * Math.sin(angleRad) + p.y * Math.cos(angleRad),
+    }),
 };
+
 
 const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onClose, onNew, initialFile }) => {
   const [docSettings, setDocSettings] = useState(initialDocumentSettings);
@@ -42,12 +44,28 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
   const [viewResetKey, setViewResetKey] = useState(0);
   const [selection, setSelection] = useState<{ rect: { x: number; y: number; width: number; height: number; } } | null>(null);
   const [selectionPreview, setSelectionPreview] = useState<{ rect: { x: number; y: number; width: number; height: number; } } | null>(null);
+  
+  // Left sidebar properties panel visibility
   const [isPropertiesPanelOpen, setIsPropertiesPanelOpen] = useState(true);
 
-  const [history, setHistory] = useState<Layer[][]>([]);
+  // Right sidebar panel visibility state
+  const [isLayersPanelOpen, setIsLayersPanelOpen] = useState(true);
+  const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
+  const [isCommentsPanelOpen, setIsCommentsPanelOpen] = useState(false);
+  
+  // Right sidebar panel height state
+  const [layersPanelHeight, setLayersPanelHeight] = useState(350);
+  const [propertiesPanelHeight, setPropertiesPanelHeight] = useState(400);
+  const [historyPanelHeight, setHistoryPanelHeight] = useState(250);
+  const [commentsPanelHeight, setCommentsPanelHeight] = useState(250);
+
+  const [history, setHistory] = useState<HistoryState[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
   
+  // State for live previews without creating history (performance optimization)
+  const [previewLayerProps, setPreviewLayerProps] = useState<{ id: string; props: Partial<Layer> } | null>(null);
+
   const [isBgConvertModalOpen, setIsBgConvertModalOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -55,6 +73,9 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
   const [moveSession, setMoveSession] = useState<MoveSession | null>(null);
   const [snapLines, setSnapLines] = useState<SnapLine[]>([]);
   const [transformMode, setTransformMode] = useState<TransformMode>('free-transform');
+  
+  // Contextual taskbar state
+  const [taskbarPosition, setTaskbarPosition] = useState<{ top: number, left: number, visible: boolean }>({ top: 0, left: 0, visible: false });
 
   // Tool settings state
   const [foregroundColor, setForegroundColor] = useState('#000000');
@@ -66,12 +87,24 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
     shape: 'round' as BrushShape,
   });
 
-  const currentLayers = useMemo(() => history[historyIndex] ?? [], [history, historyIndex]);
-  const activeLayer = useMemo(() => currentLayers.find(l => l.id === activeLayerId), [currentLayers, activeLayerId]);
+  const currentLayers = useMemo(() => history[historyIndex]?.layers ?? [], [history, historyIndex]);
 
-  const commit = useCallback((newLayers: Layer[], newActiveLayerId?: string) => {
+  // Create a memoized version of layers that includes live preview changes
+  const layersWithPreview = useMemo(() => {
+    if (!previewLayerProps) {
+        return currentLayers;
+    }
+    return currentLayers.map(l => 
+        l.id === previewLayerProps.id ? { ...l, ...previewLayerProps.props } : l
+    );
+  }, [currentLayers, previewLayerProps]);
+
+  const activeLayer = useMemo(() => layersWithPreview.find(l => l.id === activeLayerId), [layersWithPreview, activeLayerId]);
+
+  const commit = useCallback((newLayers: Layer[], action: string, newActiveLayerId?: string) => {
+    const newHistoryState: HistoryState = { layers: newLayers, action };
     const newHistory = history.slice(0, historyIndex + 1);
-    newHistory.push(newLayers);
+    newHistory.push(newHistoryState);
     setHistory(newHistory);
     setHistoryIndex(newHistory.length - 1);
     if (newActiveLayerId) {
@@ -98,6 +131,7 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
         const backgroundLayer: Layer = {
             id: crypto.randomUUID(),
             name: 'Background',
+            type: 'pixel',
             isVisible: true,
             isLocked: true,
             isBackground: true,
@@ -123,6 +157,7 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
             const imageLayer: Layer = {
                 id: crypto.randomUUID(),
                 name: initialFile.name.split('.').slice(0, -1).join('.') || 'Layer 1',
+                type: 'pixel',
                 isVisible: true,
                 isLocked: false,
                 imageData: imageData,
@@ -141,11 +176,10 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
             initialActiveId = imageLayer.id;
         }
 
-        setHistory([initialLayers]);
-        setHistoryIndex(0);
-        setActiveLayerId(initialActiveId);
+        commit(initialLayers, 'New Document', initialActiveId);
     };
     init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialDocumentSettings, initialFile]);
 
   
@@ -170,7 +204,7 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
     if (!activeLayerId) return;
     
     const activeLayer = currentLayers.find(l => l.id === activeLayerId);
-    if (!activeLayer || activeLayer.isLocked || activeLayer.isBackground) return;
+    if (!activeLayer || activeLayer.isLocked || activeLayer.isBackground || activeLayer.type !== 'pixel') return;
 
     const canvas = document.createElement('canvas');
     canvas.width = activeLayer.width;
@@ -178,21 +212,17 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
     
-    // 1. Draw the original layer content (untransformed)
     if (activeLayer.imageData) {
         ctx.putImageData(activeLayer.imageData, 0, 0);
     }
     
-    // 2. Draw the new stroke on top
     const strokeCanvas = document.createElement('canvas');
     strokeCanvas.width = docSettings.width;
     strokeCanvas.height = docSettings.height;
     strokeCanvas.getContext('2d')?.putImageData(strokesImageData, 0, 0);
     
-    // We need to draw the stroke in the layer's local coordinate space
     ctx.save();
     ctx.globalCompositeOperation = activeSubTool === 'eraser' ? 'destination-out' : 'source-over';
-    // Apply inverse transform to the stroke canvas before drawing it onto the layer's canvas
     const tx = activeLayer.x - activeLayer.width / 2;
     const ty = activeLayer.y - activeLayer.height / 2;
     ctx.translate(-tx, -ty);
@@ -207,21 +237,28 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
         }
         return layer;
     });
-    commit(newLayers);
+    commit(newLayers, activeSubTool === 'eraser' ? 'Erase' : 'Brush Stroke');
   };
 
-  const handleUndo = useCallback(() => {
-    if (historyIndex > 0) setHistoryIndex(historyIndex - 1);
-  }, [historyIndex]);
+  const handleJumpToHistoryState = (index: number) => {
+    if (index >= 0 && index < history.length) {
+      setHistoryIndex(index);
+    }
+  };
 
-  const handleRedo = useCallback(() => {
-    if (historyIndex < history.length - 1) setHistoryIndex(historyIndex + 1);
-  }, [historyIndex, history.length]);
-  
   const handleAddLayer = () => {
+    let maxLayerNum = 0;
+    currentLayers.forEach(l => {
+        const match = l.name.match(/^Layer (\d+)$/);
+        if (match) {
+            maxLayerNum = Math.max(maxLayerNum, parseInt(match[1]));
+        }
+    });
+
     const newLayer: Layer = {
         id: crypto.randomUUID(),
-        name: `Layer ${currentLayers.length}`,
+        name: `Layer ${maxLayerNum + 1}`,
+        type: 'pixel',
         isVisible: true, isLocked: false, opacity: 1, blendMode: 'normal',
         imageData: null, thumbnail: generateThumbnail(null, 48, 40),
         x: docSettings.width / 2,
@@ -233,10 +270,60 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
         scaleY: 1,
     };
     
-    const activeIndex = activeLayerId ? currentLayers.findIndex(l => l.id === activeLayerId) : -1;
     const newLayers = [...currentLayers];
-    newLayers.splice(activeIndex + 1, 0, newLayer);
-    commit(newLayers, newLayer.id);
+    const activeIndex = activeLayerId ? newLayers.findIndex(l => l.id === activeLayerId) : -1;
+    
+    if (activeIndex !== -1) {
+        newLayers.splice(activeIndex + 1, 0, newLayer);
+    } else {
+        newLayers.push(newLayer);
+    }
+    
+    commit(newLayers, 'Add Layer', newLayer.id);
+  };
+  
+  const handleAddShapeLayer = (rect: {x: number, y: number, width: number, height: number}) => {
+    let maxLayerNum = 0;
+    currentLayers.forEach(l => {
+        const match = l.name.match(/^Rectangle (\d+)$/);
+        if (match) {
+            maxLayerNum = Math.max(maxLayerNum, parseInt(match[1]));
+        }
+    });
+
+    const newShapeLayer: Layer = {
+        id: crypto.randomUUID(),
+        name: `Rectangle ${maxLayerNum + 1}`,
+        type: 'shape',
+        shapeProps: {
+            type: 'rectangle',
+            fill: foregroundColor,
+            stroke: null,
+            strokeWidth: 0,
+        },
+        isVisible: true,
+        isLocked: false,
+        opacity: 1,
+        blendMode: 'normal',
+        imageData: null,
+        thumbnail: '', // Will be rendered by LayersPanel
+        width: rect.width,
+        height: rect.height,
+        x: rect.x + rect.width / 2,
+        y: rect.y + rect.height / 2,
+        rotation: 0,
+        scaleX: 1,
+        scaleY: 1,
+    };
+    
+    const newLayers = [...currentLayers];
+    const activeIndex = activeLayerId ? newLayers.findIndex(l => l.id === activeLayerId) : -1;
+    
+    // Add new layer above active layer, or at the top
+    const insertionIndex = activeIndex !== -1 ? newLayers.findIndex(l => l.id === activeLayerId) + 1 : newLayers.length;
+    newLayers.splice(insertionIndex, 0, newShapeLayer);
+    
+    commit(newLayers, 'Add Shape', newShapeLayer.id);
   };
 
   const handleDeleteLayer = () => {
@@ -247,22 +334,22 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
     if (newLayers.length > 0) {
         newActiveId = newLayers[Math.max(0, Math.min(newLayers.length - 1, activeIndex -1))]?.id;
     }
-    commit(newLayers, newActiveId ?? undefined);
+    commit(newLayers, 'Delete Layer', newActiveId ?? undefined);
   };
   
-  const handleUpdateLayerProps = (id: string, props: Partial<Omit<Layer, 'imageData'>>) => {
-    const newLayers = currentLayers.map(l => l.id === id ? { ...l, ...props } : l);
-    // This function is for property changes that should generate a history state
-    commit(newLayers);
+  const handleUpdateLayerProps = useCallback((id: string, props: Partial<Omit<Layer, 'imageData'>>, action: string) => {
+    const finalLayers = currentLayers.map(l => (l.id === id ? { ...l, ...props } : l));
+    setPreviewLayerProps(null);
+    commit(finalLayers, action);
+  }, [commit, currentLayers]);
+
+  const handleUpdateLayerPropsPreview = (id: string, props: Partial<Layer>) => {
+    setPreviewLayerProps({ id, props });
   };
   
-  const handleUpdateLayerTransform = (id: string, props: Partial<Pick<Layer, 'x' | 'y' | 'rotation' | 'scaleX' | 'scaleY'>>) => {
-    const newLayers = currentLayers.map(l => l.id === id ? { ...l, ...props } : l);
-    // This is for live updates, so it doesn't create a history state
-    const newHistory = [...history];
-    newHistory[historyIndex] = newLayers;
-    setHistory(newHistory);
-  };
+  const handleUpdateLayerTransform = useCallback((id: string, props: Partial<Pick<Layer, 'x' | 'y' | 'rotation' | 'scaleX' | 'scaleY'>>) => {
+     setPreviewLayerProps(prev => ({ id, props: { ...(prev?.props ?? {}), ...props } }));
+  }, []);
 
   const handleDuplicateLayer = () => {
     if (!activeLayer) return;
@@ -276,18 +363,18 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
     const activeIndex = currentLayers.findIndex(l => l.id === activeLayerId);
     const newLayers = [...currentLayers];
     newLayers.splice(activeIndex + 1, 0, newLayer);
-    commit(newLayers, newLayer.id);
+    commit(newLayers, 'Duplicate Layer', newLayer.id);
   };
 
   const handleMergeDown = () => {
     const activeIndex = currentLayers.findIndex(l => l.id === activeLayerId);
-    if (activeIndex <= 0 || currentLayers[activeIndex].isBackground) return; // Cannot merge down if it's the bottom layer or background
+    if (activeIndex <= 0 || currentLayers[activeIndex].isBackground) return;
     
     const topLayer = currentLayers[activeIndex];
     const bottomLayer = currentLayers[activeIndex - 1];
     
-    if (bottomLayer.isBackground) {
-        alert("Cannot merge down onto the Background layer.");
+    if (bottomLayer.isBackground || bottomLayer.type !== 'pixel' || topLayer.type !== 'pixel') {
+        alert("Cannot merge: merging is only supported for pixel layers and not onto the Background.");
         return;
     }
 
@@ -335,7 +422,7 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
 
     const newLayers = currentLayers.filter(l => l.id !== topLayer.id && l.id !== bottomLayer.id);
     newLayers.splice(activeIndex - 1, 0, mergedLayer);
-    commit(newLayers, mergedLayer.id);
+    commit(newLayers, 'Merge Layers', mergedLayer.id);
   };
 
   const handleSelectionChange = (rect: {x:number, y:number, width:number, height:number} | null) => {
@@ -362,6 +449,7 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
         const newLayer: Layer = {
             id: crypto.randomUUID(),
             name: 'Image',
+            type: 'pixel',
             isVisible: true, isLocked: false, opacity: 1, blendMode: 'normal',
             imageData: imageData,
             thumbnail: generateThumbnail(imageData, 48, 40),
@@ -377,7 +465,7 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
         const activeIndex = activeLayerId ? currentLayers.findIndex(l => l.id === activeLayerId) : currentLayers.length - 1;
         const newLayers = [...currentLayers];
         newLayers.splice(activeIndex + 1, 0, newLayer);
-        commit(newLayers, newLayer.id);
+        commit(newLayers, 'Add Image', newLayer.id);
     };
     img.onerror = () => alert('Could not load the selected image.');
     img.src = imageUrl;
@@ -389,7 +477,7 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
     const newLayers = currentLayers.map(l => 
         l.isBackground ? { ...l, name: 'Layer 0', isLocked: false, isBackground: false } : l
     );
-    commit(newLayers);
+    commit(newLayers, 'Convert Background to Layer');
   };
 
   const handleConfirmConvertToLayer = () => {
@@ -398,8 +486,10 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
   };
   
   // --- TRANSFORM TOOL LOGIC ---
-  const handleTransformStart = (layer: Layer, handle: string, e: React.MouseEvent, canvasMousePos: {x: number, y: number}) => {
+  const handleTransformStart = (layer: Layer, handle: string, e: React.MouseEvent, canvasMousePos: {x: number, y: number}, cursor: string) => {
     setActiveLayerId(layer.id);
+    setPreviewLayerProps(null); // Clear previous preview
+    
     let previousSubTool: AnySubTool | null = null;
     if (activeTool === EditorTool.TRANSFORM && activeSubTool === 'move') {
         previousSubTool = 'move';
@@ -417,163 +507,52 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
         startZoom: zoom,
         mode: transformMode,
         previousSubTool: previousSubTool,
+        startCursor: cursor,
     });
   };
 
-  const handleTransformUpdate = (newLayer: Layer) => {
-    if (transformSession) {
-      setTransformSession(prev => prev ? { ...prev, layer: newLayer } : null);
-      handleUpdateLayerTransform(newLayer.id, {
-        x: newLayer.x,
-        y: newLayer.y,
-        rotation: newLayer.rotation,
-        scaleX: newLayer.scaleX,
-        scaleY: newLayer.scaleY,
-      });
-    }
-  };
-
   const handleTransformCommit = useCallback(() => {
-    if (!transformSession) return;
-    const { layer, previousSubTool } = transformSession;
-    const newLayers = currentLayers.map(l => l.id === layer.id ? layer : l);
-    commit(newLayers, layer.id);
+    if (!transformSession || !previewLayerProps) {
+      setTransformSession(null);
+      setPreviewLayerProps(null);
+      return;
+    }
+    const { originalLayer, previousSubTool } = transformSession;
+    
+    document.body.style.cursor = '';
+    
+    const finalProps = previewLayerProps.props;
+    const hasChanged = Object.keys(finalProps).some(key => {
+        const propKey = key as keyof Layer;
+        return finalProps[propKey] !== originalLayer[propKey];
+    });
+
+    if (hasChanged) {
+        commit(currentLayers.map(l => l.id === originalLayer.id ? { ...l, ...finalProps } : l), 'Transform Layer', originalLayer.id);
+    }
+    
     if (previousSubTool) {
         setActiveSubTool(previousSubTool);
     }
-    document.body.style.cursor = ''; // FIX: Reset cursor on commit
     setTransformSession(null);
-  }, [transformSession, currentLayers, commit]);
+    setPreviewLayerProps(null);
+  }, [transformSession, previewLayerProps, currentLayers, commit]);
 
   const handleTransformCancel = useCallback(() => {
-    if (transformSession) {
-        const { originalLayer, previousSubTool } = transformSession;
-        const newLayers = currentLayers.map(l => l.id === originalLayer.id ? originalLayer : l);
-        const newHistory = [...history];
-        newHistory[historyIndex] = newLayers;
-        setHistory(newHistory);
-        if (previousSubTool) {
-            setActiveSubTool(previousSubTool);
-        }
-        document.body.style.cursor = ''; // FIX: Reset cursor on cancel
-        setTransformSession(null);
-    }
-  }, [transformSession, currentLayers, history, historyIndex]);
-
-  // Global listeners for transform drag
-  useEffect(() => {
     if (!transformSession) return;
+    const { previousSubTool } = transformSession;
+    document.body.style.cursor = '';
 
-    const { originalLayer, handle, startMouse, startCanvasMouse, startPan, startZoom, isAspectRatioLocked } = transformSession;
-    const layerCenter = { x: originalLayer.x, y: originalLayer.y };
+    if (previousSubTool) {
+        setActiveSubTool(previousSubTool);
+    }
+    setTransformSession(null);
+    setPreviewLayerProps(null);
+  }, [transformSession]);
 
-    const handleMouseMove = (e: MouseEvent) => {
-        e.preventDefault();
-        
-        const currentCanvasMouse = {
-            x: (e.clientX - pan.x) / zoom,
-            y: (e.clientY - pan.y) / zoom
-        };
-
-        let newLayer = { ...originalLayer };
-
-        if (handle === 'rotate') {
-            const startAngle = Math.atan2(startCanvasMouse.y - layerCenter.y, startCanvasMouse.x - layerCenter.x);
-            const currentAngle = Math.atan2(currentCanvasMouse.y - layerCenter.y, currentCanvasMouse.x - layerCenter.x);
-            const angleDiff = (currentAngle - startAngle) * 180 / Math.PI;
-            newLayer.rotation = originalLayer.rotation + angleDiff;
-        } else {
-             // Scaling logic
-            const originalDx = startCanvasMouse.x - layerCenter.x;
-            const originalDy = startCanvasMouse.y - layerCenter.y;
-            
-            // Un-rotate the original delta to get it in the layer's local space
-            const unrotatedOriginalVector = rotatePoint({x: originalDx, y: originalDy}, {x:0, y:0}, -originalLayer.rotation);
-
-            const currentDx = currentCanvasMouse.x - layerCenter.x;
-            const currentDy = currentCanvasMouse.y - layerCenter.y;
-            const unrotatedCurrentVector = rotatePoint({x: currentDx, y: currentDy}, {x:0, y:0}, -originalLayer.rotation);
-
-            let scaleX = originalLayer.scaleX;
-            let scaleY = originalLayer.scaleY;
-
-            let fx = unrotatedOriginalVector.x !== 0 ? unrotatedCurrentVector.x / unrotatedOriginalVector.x : 1;
-            let fy = unrotatedOriginalVector.y !== 0 ? unrotatedCurrentVector.y / unrotatedOriginalVector.y : 1;
-
-            if (handle.includes('left')) fx *= -1;
-            if (handle.includes('top')) fy *= -1;
-
-            if (handle.includes('center')) { // Edge handles
-                if(handle.includes('top') || handle.includes('bottom')) scaleY *= fy;
-                else scaleX *= fx;
-            } else { // Corner handles
-                if (isAspectRatioLocked) {
-                    const f = Math.abs(fx) > Math.abs(fy) ? fx : fy;
-                    scaleX *= f;
-                    scaleY *= f;
-                } else {
-                    scaleX *= fx;
-                    scaleY *= fy;
-                }
-            }
-            newLayer.scaleX = scaleX;
-            newLayer.scaleY = scaleY;
-        }
-
-        handleTransformUpdate(newLayer);
-    };
-
-    const handleMouseUp = (e: MouseEvent) => {
-        handleTransformCommit();
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp, { once: true });
-
-    return () => {
-        window.removeEventListener('mousemove', handleMouseMove);
-        window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [transformSession, pan, zoom, handleTransformUpdate, handleTransformCommit]);
-  
-  // Keyboard listeners for undo/redo/deselect/commit transform
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
-
-      if (e.key === 'Enter' && transformSession) {
-        e.preventDefault();
-        handleTransformCommit();
-      }
-      if (e.key === 'Escape' && transformSession) {
-        e.preventDefault();
-        handleTransformCancel();
-      }
-
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
-        e.preventDefault();
-        if (selection) setSelection(null);
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        handleUndo();
-      }
-       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        handleRedo();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selection, transformSession, handleTransformCommit, handleTransformCancel, handleUndo, handleRedo]);
-
-  // --- END TRANSFORM TOOL LOGIC ---
-
-  // --- MOVE TOOL LOGIC ---
   const handleMoveStart = (layerId: string, mouseX: number, mouseY: number) => {
     const layer = currentLayers.find(l => l.id === layerId);
-    if (!layer || layer.isLocked || layer.isBackground) return;
+    if (!layer || layer.isLocked) return;
     setActiveLayerId(layerId);
     setMoveSession({
         layerId,
@@ -585,8 +564,23 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
         currentMouseY: mouseY,
     });
   };
+  
+  const handleMoveCommit = (finalMouseX: number, finalMouseY: number) => {
+    if (!moveSession) return;
+    const { layerId, startMouseX, startMouseY, layerStartX, layerStartY } = moveSession;
+    const deltaX = (finalMouseX - startMouseX) / zoom;
+    const deltaY = (finalMouseY - startMouseY) / zoom;
+    const newX = layerStartX + deltaX;
+    const newY = layerStartY + deltaY;
+    
+    if (Math.abs(deltaX) > 1 || Math.abs(deltaY) > 1) {
+        handleUpdateLayerProps(layerId, { x: newX, y: newY }, 'Move Layer');
+    }
+    setMoveSession(null);
+    setSnapLines([]);
+  };
 
-  const handleMoveUpdate = (mouseX: number, mouseY: number) => {
+  const handleMoveUpdate = useCallback((mouseX: number, mouseY: number) => {
     if (!moveSession) return;
 
     const deltaX = (mouseX - moveSession.startMouseX) / zoom;
@@ -609,228 +603,239 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
       centerY: layer.y,
     });
     
-    // --- Snap to other layers ---
     const movingBounds = getBounds({ ...movingLayer, x: newX, y: newY });
     const targetLayers = currentLayers.filter(l => l.id !== moveSession.layerId && l.isVisible && !l.isBackground);
 
-    targetLayers.forEach(targetLayer => {
-        const targetBounds = getBounds(targetLayer);
-        
-        const vPoints = [
-            { moving: movingBounds.left, target: targetBounds.left }, { moving: movingBounds.centerX, target: targetBounds.centerX },
-            { moving: movingBounds.right, target: targetBounds.right }, { moving: movingBounds.left, target: targetBounds.right },
-            { moving: movingBounds.right, target: targetBounds.left },
-        ];
-        
-        for (const p of vPoints) {
-            if (Math.abs(p.moving - p.target) < SNAP_THRESHOLD) {
-                newX += p.target - p.moving;
-                const currentMovingBounds = getBounds({ ...movingLayer, x: newX, y: newY });
-                newSnapLines.push({ type: 'vertical', position: p.target, start: Math.min(currentMovingBounds.top, targetBounds.top), end: Math.max(currentMovingBounds.bottom, targetBounds.bottom) });
-                break; 
-            }
-        }
-        
-        const hPoints = [
-            { moving: movingBounds.top, target: targetBounds.top }, { moving: movingBounds.centerY, target: targetBounds.centerY },
-            { moving: movingBounds.bottom, target: targetBounds.bottom }, { moving: movingBounds.top, target: targetBounds.bottom },
-            { moving: movingBounds.bottom, target: targetBounds.top },
-        ];
+    // Add canvas to targets
+    const canvasTarget = {
+        left: 0, right: docSettings.width, top: 0, bottom: docSettings.height,
+        centerX: docSettings.width / 2, centerY: docSettings.height / 2,
+    }
 
-        for (const p of hPoints) {
-            if (Math.abs(p.moving - p.target) < SNAP_THRESHOLD) {
-                newY += p.target - p.moving;
-                const currentMovingBounds = getBounds({ ...movingLayer, x: newX, y: newY });
-                newSnapLines.push({ type: 'horizontal', position: p.target, start: Math.min(currentMovingBounds.left, targetBounds.left), end: Math.max(currentMovingBounds.right, targetBounds.right) });
-                break;
-            }
+    const checkAndSnap = (
+        movingVal: number, targetVal: number, 
+        setter: (val: number) => void,
+        lineType: 'horizontal' | 'vertical', linePos: number,
+        // FIX: Update types to include left/right properties, which are used below.
+        movingBounds: { top: number; bottom: number; left: number; right: number }, 
+        targetBounds: { top: number; bottom: number; left: number; right: number }
+    ) => {
+        if (Math.abs(movingVal - targetVal) < SNAP_THRESHOLD) {
+            setter(targetVal);
+            const start = Math.min(movingBounds.top, targetBounds.top);
+            const end = Math.max(movingBounds.bottom, targetBounds.bottom);
+            newSnapLines.push({ type: lineType, position: linePos, start: lineType === 'horizontal' ? Math.min(movingBounds.left, targetBounds.left) : start, end: lineType === 'horizontal' ? Math.max(movingBounds.right, targetBounds.right) : end });
+            return true;
         }
+        return false;
+    };
+    
+    [...targetLayers.map(getBounds), canvasTarget].forEach(targetBounds => {
+        // Vertical snapping
+        checkAndSnap(movingBounds.left, targetBounds.left, (val) => newX += val - movingBounds.left, 'vertical', targetBounds.left, movingBounds, targetBounds);
+        checkAndSnap(movingBounds.centerX, targetBounds.centerX, (val) => newX += val - movingBounds.centerX, 'vertical', targetBounds.centerX, movingBounds, targetBounds);
+        checkAndSnap(movingBounds.right, targetBounds.right, (val) => newX += val - movingBounds.right, 'vertical', targetBounds.right, movingBounds, targetBounds);
+        
+        // Horizontal snapping
+        checkAndSnap(movingBounds.top, targetBounds.top, (val) => newY += val - movingBounds.top, 'horizontal', targetBounds.top, movingBounds, targetBounds);
+        checkAndSnap(movingBounds.centerY, targetBounds.centerY, (val) => newY += val - movingBounds.centerY, 'horizontal', targetBounds.centerY, movingBounds, targetBounds);
+        checkAndSnap(movingBounds.bottom, targetBounds.bottom, (val) => newY += val - movingBounds.bottom, 'horizontal', targetBounds.bottom, movingBounds, targetBounds);
     });
-
-    // --- Snap to Canvas Boundaries ---
-    const canvasMovingBounds = getBounds({ ...movingLayer, x: newX, y: newY });
-    const canvasBounds = { left: 0, right: docSettings.width, top: 0, bottom: docSettings.height, centerX: docSettings.width / 2, centerY: docSettings.height / 2 };
-
-    const vCanvasPoints = [
-        { moving: canvasMovingBounds.left, target: canvasBounds.left }, { moving: canvasMovingBounds.centerX, target: canvasBounds.centerX },
-        { moving: canvasMovingBounds.right, target: canvasBounds.right },
-    ];
-    for (const p of vCanvasPoints) {
-        if (Math.abs(p.moving - p.target) < SNAP_THRESHOLD) {
-            newX += p.target - p.moving;
-            newSnapLines.push({ type: 'vertical', position: p.target, start: 0, end: docSettings.height });
-            break;
-        }
-    }
-
-    const finalMovingBounds = getBounds({ ...movingLayer, x: newX, y: newY });
-    const hCanvasPoints = [
-        { moving: finalMovingBounds.top, target: canvasBounds.top }, { moving: finalMovingBounds.centerY, target: canvasBounds.centerY },
-        { moving: finalMovingBounds.bottom, target: canvasBounds.bottom },
-    ];
-    for (const p of hCanvasPoints) {
-        if (Math.abs(p.moving - p.target) < SNAP_THRESHOLD) {
-            newY += p.target - p.moving;
-            newSnapLines.push({ type: 'horizontal', position: p.target, start: 0, end: docSettings.width });
-            break;
-        }
-    }
 
     setSnapLines(newSnapLines);
-    handleUpdateLayerTransform(moveSession.layerId, { x: newX, y: newY });
+    handleUpdateLayerPropsPreview(moveSession.layerId, { x: newX, y: newY });
     setMoveSession(prev => prev ? { ...prev, currentMouseX: mouseX, currentMouseY: mouseY } : null);
-  };
+  }, [moveSession, zoom, currentLayers, handleUpdateLayerPropsPreview, docSettings.width, docSettings.height]);
+  
+  // Undo/Redo
+  const handleUndo = useCallback(() => {
+    handleJumpToHistoryState(historyIndex - 1);
+  }, [historyIndex]);
+  const handleRedo = useCallback(() => {
+    handleJumpToHistoryState(historyIndex + 1);
+  }, [historyIndex]);
 
-  const handleMoveCommit = () => {
-    if (!moveSession) return;
-    
-    const finalLayer = currentLayers.find(l => l.id === moveSession.layerId);
-    if (!finalLayer) {
-        setMoveSession(null);
-        setSnapLines([]);
-        return;
-    }
-    
-    if (Math.round(finalLayer.x) !== moveSession.layerStartX || Math.round(finalLayer.y) !== moveSession.layerStartY) {
-        handleUpdateLayerProps(moveSession.layerId, { x: finalLayer.x, y: finalLayer.y });
-    }
-    
-    setMoveSession(null);
-    setSnapLines([]);
-  };
-  // --- END MOVE TOOL LOGIC ---
-
-  const handleToolSelect = (tool: EditorTool) => {
-    handleTransformCommit(); // Commit any pending transform when switching tools
-    setSelectionPreview(null);
-    
-    switch (tool) {
-        case EditorTool.TRANSFORM: setActiveSubTool('move'); break;
-        case EditorTool.PAINT: setActiveSubTool('brush'); break;
-        case EditorTool.SELECT: setActiveSubTool('rectangle'); break;
-        default: break;
-    }
-
-    if (tool === activeTool) {
-        setIsPropertiesPanelOpen(prev => !prev);
-    } else { 
-        setActiveTool(tool); 
-        setIsPropertiesPanelOpen(true); 
-    }
-  };
-
-  const handleExport = (format: ExportFormat, quality?: number) => {
-    const compositeCanvas = document.createElement('canvas');
-    compositeCanvas.width = docSettings.width;
-    compositeCanvas.height = docSettings.height;
-    const ctx = compositeCanvas.getContext('2d');
-    if (!ctx) return;
-
-    // Render layers in order from bottom to top
-    [...currentLayers].reverse().forEach(layer => {
-      if (layer.isVisible && layer.imageData) {
-        const layerCanvas = document.createElement('canvas');
-        layerCanvas.width = layer.width;
-        layerCanvas.height = layer.height;
-        layerCanvas.getContext('2d')?.putImageData(layer.imageData, 0, 0);
-        
-        ctx.save();
-        ctx.globalAlpha = layer.opacity;
-        ctx.globalCompositeOperation = layer.isBackground ? 'source-over' : (layer.blendMode === 'normal' ? 'source-over' : layer.blendMode);
-        
-        ctx.translate(layer.x, layer.y);
-        ctx.rotate(layer.rotation * Math.PI / 180);
-        ctx.scale(layer.scaleX, layer.scaleY);
-
-        ctx.drawImage(layerCanvas, -layer.width / 2, -layer.height / 2);
-        ctx.restore();
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        e.shiftKey ? handleRedo() : handleUndo();
       }
-    });
+      if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+        e.preventDefault();
+        handleRedo();
+      }
+      if (transformSession) {
+        if (e.key === 'Enter') handleTransformCommit();
+        if (e.key === 'Escape') handleTransformCancel();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleUndo, handleRedo, transformSession, handleTransformCommit, handleTransformCancel]);
+  
+  const handleExport = (format: ExportFormat, quality?: number) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = docSettings.width;
+    canvas.height = docSettings.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
     
-    const dataUrl = compositeCanvas.toDataURL(format, quality);
+    // Render layers from bottom to top
+    currentLayers.forEach(layer => {
+      if (!layer.isVisible) return;
+      if (!layer.imageData && layer.type !== 'shape') return;
+
+      ctx.save();
+      ctx.globalAlpha = layer.opacity;
+      ctx.globalCompositeOperation = layer.blendMode === 'normal' ? 'source-over' : layer.blendMode;
+      
+      ctx.translate(layer.x, layer.y);
+      ctx.rotate(layer.rotation * Math.PI / 180);
+      ctx.scale(layer.scaleX, layer.scaleY);
+      ctx.translate(-layer.width / 2, -layer.height / 2);
+
+      if (layer.type === 'pixel' && layer.imageData) {
+        const offscreenCanvas = document.createElement('canvas');
+        offscreenCanvas.width = layer.width;
+        offscreenCanvas.height = layer.height;
+        const offscreenCtx = offscreenCanvas.getContext('2d');
+        if (offscreenCtx) {
+          offscreenCtx.putImageData(layer.imageData, 0, 0);
+          ctx.drawImage(offscreenCanvas, 0, 0);
+        }
+      } else if (layer.type === 'shape' && layer.shapeProps) {
+        const { type, fill, stroke, strokeWidth } = layer.shapeProps;
+        if (type === 'rectangle') {
+          if (fill) {
+            ctx.fillStyle = fill;
+            ctx.fillRect(0, 0, layer.width, layer.height);
+          }
+          if (stroke) {
+            ctx.strokeStyle = stroke;
+            ctx.lineWidth = strokeWidth;
+            ctx.strokeRect(0, 0, layer.width, layer.height);
+          }
+        }
+      }
+      ctx.restore();
+    });
+
+    const dataUrl = canvas.toDataURL(format, quality);
     const link = document.createElement('a');
     link.href = dataUrl;
-    const extension = format.split('/')[1];
-    link.download = `${docSettings.name}.${extension}`;
+    link.download = `${docSettings.name}.${format.split('/')[1]}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
-
-  const handleSaveProject = () => saveProject(docSettings, currentLayers);
   
-  const handleOpenProjectClick = () => fileInputRef.current?.click();
+  const handleSaveProject = () => {
+      saveProject(docSettings, currentLayers);
+  };
 
+  const handleOpenProject = () => {
+    fileInputRef.current?.click();
+  };
+  
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-        try {
-            const { documentSettings: newDoc, layers: newLayers } = await loadProject(file);
-            setDocSettings(newDoc);
-            setHistory([newLayers]);
-            setHistoryIndex(0);
-            setActiveLayerId(newLayers[newLayers.length - 1]?.id ?? null);
-            setZoom(1);
-            setSelection(null);
-        } catch (error) {
-            alert('Error loading project file. It may be invalid.');
-            console.error(error);
-        } finally {
-            e.target.value = '';
-        }
+      try {
+        const { documentSettings, layers } = await loadProject(file);
+        setDocSettings(documentSettings);
+        setHistoryIndex(0);
+        setHistory([{ layers: layers, action: 'Open Project' }]);
+        setActiveLayerId(layers[layers.length - 1].id);
+        setZoom(1);
+        setPan({x: 0, y: 0});
+        setViewResetKey(k => k + 1);
+      } catch (error) {
+        alert(error instanceof Error ? error.message : 'An unknown error occurred.');
+      }
     }
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
   
-  const canUndo = historyIndex > 0;
-  const canRedo = historyIndex < history.length - 1;
+  const handleRotate = (degrees: number) => {
+    if (!activeLayer) return;
+    const newRotation = (activeLayer.rotation + degrees) % 360;
+    setPreviewLayerProps({ id: activeLayer.id, props: { rotation: newRotation }});
+  }
 
-  const transformPropsForPanel = useMemo(() => {
-    const layer = transformSession?.layer ?? activeLayer;
-    if (!layer || layer.isBackground) return undefined;
-    
-    return {
-        layer,
-        onPropChange: (prop: keyof Layer, value: number) => {
-            handleUpdateLayerTransform(layer.id, { [prop]: value });
-        },
-        onCommit: (prop: keyof Layer, value: number) => {
-             handleUpdateLayerProps(layer.id, { [prop]: value });
-        },
-    };
-  }, [transformSession, activeLayer, handleUpdateLayerTransform, handleUpdateLayerProps]);
+  const handleFlip = (direction: 'horizontal' | 'vertical') => {
+    if (!activeLayer) return;
+    if (direction === 'horizontal') {
+        setPreviewLayerProps({ id: activeLayer.id, props: { scaleX: -activeLayer.scaleX }});
+    } else {
+        setPreviewLayerProps({ id: activeLayer.id, props: { scaleY: -activeLayer.scaleY }});
+    }
+  }
+
+  // Update contextual taskbar position
+  useEffect(() => {
+    if (activeLayer && containerRef.current) {
+        const layerBounds = {
+            left: (activeLayer.x - (activeLayer.width * activeLayer.scaleX) / 2) * zoom + pan.x,
+            bottom: (activeLayer.y + (activeLayer.height * activeLayer.scaleY) / 2) * zoom + pan.y,
+        };
+        const containerRect = containerRef.current.getBoundingClientRect();
+        
+        setTaskbarPosition({
+            top: layerBounds.bottom + containerRect.top + 20,
+            left: layerBounds.left + (activeLayer.width * activeLayer.scaleX * zoom) / 2 + containerRect.left,
+            visible: true
+        });
+    } else {
+        setTaskbarPosition(p => ({ ...p, visible: false }));
+    }
+  }, [activeLayer, pan, zoom, docSettings.width, docSettings.height]);
+
+  const containerRef = useRef<HTMLDivElement>(null);
   
+  const transformPropsForPanel = useMemo(() => activeLayer ? ({
+    layer: activeLayer,
+    onPropChange: (prop: keyof Layer, value: number) => handleUpdateLayerTransform(activeLayer.id, { [prop]: value }),
+    onCommit: (prop: keyof Layer, value: number) => handleUpdateLayerProps(activeLayer.id, { [prop]: value }, 'Transform Layer'),
+  }) : undefined, [activeLayer, handleUpdateLayerTransform, handleUpdateLayerProps]);
+
   return (
-    <div className="flex flex-col h-screen bg-[#181818] text-gray-300 font-sans text-sm">
-      <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".aips" className="hidden" />
-      <EditorHeader
-        documentName={docSettings.name}
-        onClose={onClose} onNew={onNew} onSaveAs={() => setIsExportModalOpen(true)}
-        onSaveProject={handleSaveProject} onOpenProject={handleOpenProjectClick}
-        canUndo={canUndo} canRedo={canRedo} onUndo={handleUndo} onRedo={handleRedo}
-        zoom={zoom} onZoomChange={setZoom} onResetView={handleResetView}
-      />
-      <div className="flex flex-1 overflow-hidden">
-        <Toolbar
-          activeTool={activeTool}
-          onToolSelect={handleToolSelect}
-          foregroundColor={foregroundColor}
-          backgroundColor={backgroundColor}
-          onSetForegroundColor={setForegroundColor}
-          onSetBackgroundColor={setBackgroundColor}
-          onSwapColors={() => {
-            const temp = foregroundColor;
-            setForegroundColor(backgroundColor);
-            setBackgroundColor(temp);
-          }}
-          onResetColors={() => {
-            setForegroundColor('#000000');
-            setBackgroundColor('#ffffff');
-          }}
+    <div className="w-screen h-screen bg-[#181818] flex flex-col font-sans overflow-hidden">
+        <input ref={fileInputRef} type="file" accept=".aips" onChange={handleFileChange} className="hidden" />
+        <EditorHeader 
+            documentName={docSettings.name} 
+            onClose={onClose}
+            onNew={onNew}
+            onSaveAs={() => setIsExportModalOpen(true)}
+            onSaveProject={handleSaveProject}
+            onOpenProject={handleOpenProject}
+            canUndo={historyIndex > 0}
+            canRedo={historyIndex < history.length - 1}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            zoom={zoom}
+            onZoomChange={handleZoom}
+            onResetView={handleResetView}
         />
-        {isPropertiesPanelOpen && (
-            <PropertiesPanel 
+        <main ref={containerRef} className="flex-1 flex overflow-hidden">
+            <LeftSidebar 
               activeTool={activeTool}
-              onClose={() => setIsPropertiesPanelOpen(false)}
+              onToolSelect={(tool) => {
+                setActiveTool(tool);
+                // Reset to default sub-tool when changing main tool
+                if (tool === EditorTool.TRANSFORM) setActiveSubTool('move');
+                else if (tool === EditorTool.PAINT) setActiveSubTool('brush');
+              }}
+              foregroundColor={foregroundColor}
+              backgroundColor={backgroundColor}
+              onSetForegroundColor={setForegroundColor}
+              onSetBackgroundColor={setBackgroundColor}
+              onSwapColors={() => { const temp = foregroundColor; setForegroundColor(backgroundColor); setBackgroundColor(temp); }}
+              onResetColors={() => { setForegroundColor('#000000'); setBackgroundColor('#ffffff'); }}
+              isPropertiesPanelOpen={isPropertiesPanelOpen}
+              togglePropertiesPanel={() => setIsPropertiesPanelOpen(p => !p)}
               activeSubTool={activeSubTool}
               onSubToolChange={setActiveSubTool}
               transformProps={transformPropsForPanel}
@@ -838,69 +843,100 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
               brushSettings={brushSettings}
               onBrushSettingsChange={setBrushSettings}
             />
-        )}
-        <main className="flex-1 flex flex-col bg-[#181818] overflow-hidden">
-          <CanvasArea
-            document={docSettings} layers={currentLayers} activeLayerId={activeLayerId}
-            activeTool={activeTool}
-            activeSubTool={activeSubTool}
-            zoom={zoom} onZoom={handleZoom}
-            pan={pan} onPanChange={setPan}
-            viewResetKey={viewResetKey}
-            selection={selection} onSelectionChange={handleSelectionChange}
-            selectionPreview={selectionPreview}
-            onSelectionPreview={handleSelectionPreview}
-            // FIX: The value for the onDrawEnd prop was misspelled. It should be handleDrawEnd.
-            onDrawEnd={handleDrawEnd} onAttemptEditBackgroundLayer={handleAttemptEditBackground}
-            onSelectLayer={setActiveLayerId}
-            moveSession={moveSession}
-            onMoveStart={handleMoveStart}
-            onMoveUpdate={handleMoveUpdate}
-            onMoveCommit={handleMoveCommit}
-            transformSession={transformSession}
-            onTransformStart={handleTransformStart}
-            onTransformUpdate={handleTransformUpdate}
-            onTransformCommit={handleTransformCommit}
-            onTransformCancel={handleTransformCancel}
-            foregroundColor={foregroundColor}
-            backgroundColor={backgroundColor}
-            brushSize={brushSettings.size}
-            brushOpacity={brushSettings.opacity}
-            brushHardness={brushSettings.hardness}
-            brushShape={brushSettings.shape}
-            fontFamily="sans-serif"
-            fontSize={48}
-            textAlign="left"
-            snapLines={snapLines}
-          />
+            <CanvasArea
+                document={docSettings}
+                layers={layersWithPreview}
+                activeLayerId={activeLayerId}
+                activeTool={activeTool}
+                activeSubTool={activeSubTool}
+                zoom={zoom}
+                onZoom={handleZoom}
+                pan={pan}
+                onPanChange={setPan}
+                viewResetKey={viewResetKey}
+                selection={selection}
+                onSelectionChange={handleSelectionChange}
+                selectionPreview={selectionPreview}
+                onSelectionPreview={handleSelectionPreview}
+                onDrawEnd={handleDrawEnd}
+                onAttemptEditBackgroundLayer={handleAttemptEditBackground}
+                onSelectLayer={setActiveLayerId}
+                moveSession={moveSession}
+                onMoveStart={handleMoveStart}
+                onMoveUpdate={handleMoveUpdate}
+                onMoveCommit={handleMoveCommit}
+                transformSession={transformSession}
+                onTransformStart={handleTransformStart}
+                onTransformUpdate={() => {}} // Placeholder
+                onTransformCommit={handleTransformCommit}
+                onTransformCancel={handleTransformCancel}
+                snapLines={snapLines}
+                foregroundColor={foregroundColor}
+                backgroundColor={backgroundColor}
+                brushSize={brushSettings.size}
+                brushOpacity={brushSettings.opacity}
+                brushHardness={brushSettings.hardness}
+                brushShape={brushSettings.shape}
+                fontFamily={'sans-serif'}
+                fontSize={48}
+                textAlign={'left'}
+                onAddShapeLayer={handleAddShapeLayer}
+            />
+            <RightSidebarContainer
+              layers={currentLayers}
+              activeLayerId={activeLayerId}
+              onSelectLayer={setActiveLayerId}
+              onAddLayer={handleAddLayer}
+              onDeleteLayer={handleDeleteLayer}
+              onUpdateLayerProps={handleUpdateLayerProps}
+              onUpdateLayerPropsPreview={handleUpdateLayerPropsPreview}
+              onDuplicateLayer={handleDuplicateLayer}
+              onMergeDown={handleMergeDown}
+              onConvertBackground={() => setIsBgConvertModalOpen(true)}
+              isLayersPanelOpen={isLayersPanelOpen}
+              toggleLayersPanel={() => setIsLayersPanelOpen(p => !p)}
+              layersPanelHeight={layersPanelHeight}
+              onLayersPanelHeightChange={setLayersPanelHeight}
+              isHistoryPanelOpen={isHistoryPanelOpen}
+              toggleHistoryPanel={() => setIsHistoryPanelOpen(p => !p)}
+              historyPanelHeight={historyPanelHeight}
+              onHistoryPanelHeightChange={setHistoryPanelHeight}
+              history={history}
+              historyIndex={historyIndex}
+              onJumpToHistoryState={handleJumpToHistoryState}
+              isCommentsPanelOpen={isCommentsPanelOpen}
+              toggleCommentsPanel={() => setIsCommentsPanelOpen(p => !p)}
+              commentsPanelHeight={commentsPanelHeight}
+              onCommentsPanelHeightChange={setCommentsPanelHeight}
+            />
+             <ContextualTaskbar 
+                position={taskbarPosition}
+                activeTool={activeTool}
+                activeSubTool={activeSubTool}
+                transformSession={transformSession}
+                onTransformConfirm={handleTransformCommit}
+                onTransformCancel={handleTransformCancel}
+                onRotateCW={() => handleRotate(90)}
+                onRotateCCW={() => handleRotate(-90)}
+                onFlipHorizontal={() => handleFlip('horizontal')}
+                onFlipVertical={() => handleFlip('vertical')}
+            />
         </main>
-        <LayersPanel
-            layers={currentLayers}
-            activeLayerId={activeLayerId}
-            onSelectLayer={setActiveLayerId}
-            onAddLayer={handleAddLayer}
-            onDeleteLayer={handleDeleteLayer}
-            onUpdateLayerProps={handleUpdateLayerProps}
-            onDuplicateLayer={handleDuplicateLayer}
-            onMergeDown={handleMergeDown}
-            onConvertBackground={handleAttemptEditBackground}
+        <ConfirmModal
+            isOpen={isBgConvertModalOpen}
+            onClose={() => setIsBgConvertModalOpen(false)}
+            onConfirm={handleConfirmConvertToLayer}
+            title="Convert Background"
+            confirmText="Convert"
+        >
+          <p>The Background layer cannot be moved or have its blending options changed. Do you want to convert it to a normal layer?</p>
+        </ConfirmModal>
+        <ExportModal 
+            isOpen={isExportModalOpen}
+            onClose={() => setIsExportModalOpen(false)}
+            onExport={handleExport}
+            documentName={docSettings.name}
         />
-      </div>
-      <ConfirmModal 
-        isOpen={isBgConvertModalOpen}
-        onClose={() => setIsBgConvertModalOpen(false)}
-        onConfirm={handleConfirmConvertToLayer}
-        title="Convert to Layer"
-        confirmText="Convert"
-      >
-        <p>The Background layer is special. You can't move it, hide it, change its stacking order or blending mode. To get full access, you must convert it to a normal layer.</p>
-      </ConfirmModal>
-       <ExportModal
-        isOpen={isExportModalOpen}
-        onClose={() => setIsExportModalOpen(false)}
-        onExport={handleExport}
-        documentName={docSettings.name}
-      />
     </div>
   );
 };

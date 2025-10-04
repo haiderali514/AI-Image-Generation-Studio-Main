@@ -1,9 +1,7 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { EditorTool, DocumentSettings, Layer, BrushShape, TextAlign, AnySubTool, TransformSession, SnapLine } from '../../types';
 import Canvas from '../ui/Canvas';
 import TransformControls from './TransformControls';
-import { MoveActionBar, TransformActionBar, CropActionBar, AddImageActionBar } from './FloatingActionBar';
 
 const MIN_ZOOM = 0.01; // 1%
 const MAX_ZOOM = 5; // 500%
@@ -34,6 +32,7 @@ interface CanvasAreaProps {
   selectionPreview: { rect: { x: number; y: number; width: number; height: number; } } | null;
   onSelectionPreview: (rect: { x: number; y: number; width: number; height: number; } | null) => void;
   onDrawEnd: (imageData: ImageData) => void;
+  onAddShapeLayer: (rect: { x: number, y: number, width: number, height: number }) => void;
   onAttemptEditBackgroundLayer: () => void;
   onSelectLayer: (id: string) => void;
   // Move Props
@@ -43,7 +42,7 @@ interface CanvasAreaProps {
   onMoveCommit: (finalMouseX: number, finalMouseY: number) => void;
   // Transform Props
   transformSession: TransformSession | null;
-  onTransformStart: (layer: Layer, handle: string, e: React.MouseEvent, canvasMousePos: { x: number; y: number }) => void;
+  onTransformStart: (layer: Layer, handle: string, e: React.MouseEvent, canvasMousePos: { x: number; y: number }, cursor: string) => void;
   onTransformUpdate: (newLayer: Layer) => void;
   onTransformCommit: () => void;
   onTransformCancel: () => void;
@@ -61,7 +60,7 @@ interface CanvasAreaProps {
 }
 
 const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
-  const { document: docSettings, layers, activeLayerId, activeTool, activeSubTool, zoom, onZoom, pan, onPanChange, viewResetKey, selection, onSelectionChange, selectionPreview, onSelectionPreview, onDrawEnd, onAttemptEditBackgroundLayer, onSelectLayer, moveSession, onMoveStart, onMoveUpdate, onMoveCommit, transformSession, onTransformStart, onTransformUpdate, onTransformCommit, onTransformCancel, snapLines, ...toolProps } = props;
+  const { document: docSettings, layers, activeLayerId, activeTool, activeSubTool, zoom, onZoom, pan, onPanChange, viewResetKey, selection, onSelectionChange, selectionPreview, onSelectionPreview, onDrawEnd, onAddShapeLayer, onAttemptEditBackgroundLayer, onSelectLayer, moveSession, onMoveStart, onMoveUpdate, onMoveCommit, transformSession, onTransformStart, onTransformUpdate, onTransformCommit, onTransformCancel, snapLines, ...toolProps } = props;
   const containerRef = useRef<HTMLDivElement>(null);
   const panStart = useRef({ x: 0, y: 0 });
   const isPanning = useRef(false);
@@ -96,14 +95,9 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
       const isTransformingThisLayer = transformSession && transformSession.layer.id === layer.id;
       const layerToRender = isTransformingThisLayer ? transformSession!.layer : layer;
 
-      if (!layerToRender.isVisible || !layerToRender.imageData) return;
+      if (!layerToRender.isVisible) return;
+      if (!layerToRender.imageData && layerToRender.type !== 'shape') return;
 
-      const offscreenCanvas = document.createElement('canvas');
-      offscreenCanvas.width = layerToRender.width;
-      offscreenCanvas.height = layerToRender.height;
-      const offscreenCtx = offscreenCanvas.getContext('2d');
-      if (!offscreenCtx) return;
-      offscreenCtx.putImageData(layerToRender.imageData, 0, 0);
 
       ctx.save();
       ctx.globalAlpha = layerToRender.opacity;
@@ -112,8 +106,32 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
       ctx.translate(layerToRender.x, layerToRender.y);
       ctx.rotate(layerToRender.rotation * Math.PI / 180);
       ctx.scale(layerToRender.scaleX, layerToRender.scaleY);
+      ctx.translate(-layerToRender.width / 2, -layerToRender.height / 2);
 
-      ctx.drawImage(offscreenCanvas, -layerToRender.width / 2, -layerToRender.height / 2);
+      if (layerToRender.type === 'pixel' && layerToRender.imageData) {
+        const offscreenCanvas = document.createElement('canvas');
+        offscreenCanvas.width = layerToRender.width;
+        offscreenCanvas.height = layerToRender.height;
+        const offscreenCtx = offscreenCanvas.getContext('2d');
+        if (offscreenCtx) {
+          offscreenCtx.putImageData(layerToRender.imageData, 0, 0);
+          ctx.drawImage(offscreenCanvas, 0, 0);
+        }
+      } else if (layerToRender.type === 'shape' && layerToRender.shapeProps) {
+        const { type, fill, stroke, strokeWidth } = layerToRender.shapeProps;
+        if (type === 'rectangle') {
+          if (fill) {
+            ctx.fillStyle = fill;
+            ctx.fillRect(0, 0, layerToRender.width, layerToRender.height);
+          }
+          if (stroke) {
+            ctx.strokeStyle = stroke;
+            ctx.lineWidth = strokeWidth;
+            ctx.strokeRect(0, 0, layerToRender.width, layerToRender.height);
+          }
+        }
+      }
+
       ctx.restore();
     });
   }, [layers, docSettings.width, docSettings.height, transformSession]);
@@ -255,81 +273,57 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
       animationFrameId.current = requestAnimationFrame(animate);
     };
 
-    if (rectToDraw) animate();
-    else ctx.clearRect(0, 0, selectionCanvas.width, selectionCanvas.height);
+    if (rectToDraw) {
+        if (!animationFrameId.current) {
+            animationFrameId.current = requestAnimationFrame(animate);
+        }
+    } else {
+        if (animationFrameId.current) {
+            cancelAnimationFrame(animationFrameId.current);
+            animationFrameId.current = undefined;
+        }
+        ctx.clearRect(0, 0, selectionCanvas.width, selectionCanvas.height);
+    }
     
     return () => {
-      if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
+        if (animationFrameId.current) {
+            cancelAnimationFrame(animationFrameId.current);
+        }
     };
-  }, [selection, selectionPreview, zoom]);
+  }, [selection, selectionPreview]);
   
-  // New effect for drawing snap lines
   useEffect(() => {
-    const canvas = snapLinesCanvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!ctx || !canvas) return;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    if (snapLines.length > 0) {
-        ctx.save();
-        ctx.strokeStyle = '#FF00FF'; // Pink
-        ctx.lineWidth = 1 / zoom;
-        ctx.setLineDash([4 / zoom, 4 / zoom]);
-        
-        snapLines.forEach(line => {
-            ctx.beginPath();
-            if (line.type === 'vertical') {
-                ctx.moveTo(line.position + 0.5, line.start);
-                ctx.lineTo(line.position + 0.5, line.end);
-            } else { // horizontal
-                ctx.moveTo(line.start, line.position + 0.5);
-                ctx.lineTo(line.end, line.position + 0.5);
-            }
-            ctx.stroke();
-        });
-        ctx.restore();
-    }
+      const snapCanvas = snapLinesCanvasRef.current;
+      const ctx = snapCanvas?.getContext('2d');
+      if (!ctx || !snapCanvas) return;
+      
+      ctx.clearRect(0, 0, snapCanvas.width, snapCanvas.height);
+      
+      if (snapLines.length > 0) {
+          ctx.strokeStyle = '#FF00FF'; // Pink
+          ctx.lineWidth = 1 / zoom;
+          ctx.setLineDash([4 / zoom, 2 / zoom]);
+          
+          snapLines.forEach(line => {
+              ctx.beginPath();
+              if (line.type === 'vertical') {
+                  ctx.moveTo(line.position, line.start);
+                  ctx.lineTo(line.position, line.end);
+              } else {
+                  ctx.moveTo(line.start, line.position);
+                  ctx.lineTo(line.end, line.position);
+              }
+              ctx.stroke();
+          });
+      }
   }, [snapLines, zoom]);
 
   const activeLayer = layers.find(l => l.id === activeLayerId);
-  const showTransformControls = 
-    activeLayer && 
-    !activeLayer.isBackground && 
-    !activeLayer.isLocked &&
-    activeTool === EditorTool.TRANSFORM && 
-    (activeSubTool === 'move' || activeSubTool === 'transform');
-  
-  const isTransforming = !!transformSession;
-  const isCropping = activeTool === EditorTool.TRANSFORM && activeSubTool === 'crop';
-  
-  const renderFloatingActionBar = () => {
-    if (isTransforming) {
-        return <TransformActionBar onCancel={onTransformCancel} onDone={onTransformCommit} />;
-    }
-    if (isCropping) {
-        return <CropActionBar onCancel={() => {}} onDone={() => {}} />;
-    }
-    if (activeTool === EditorTool.TRANSFORM && activeSubTool === 'move') {
-        return <MoveActionBar />;
-    }
-    if (activeTool === EditorTool.ADD_IMAGE) {
-        return <AddImageActionBar />;
-    }
-    return null;
-  }
-  
-  const isInteractionToolActive = [EditorTool.PAINT, EditorTool.TYPE, EditorTool.SHAPES, EditorTool.SELECT, EditorTool.TRANSFORM].includes(activeTool);
 
   return (
-    <div 
+    <div
       ref={containerRef}
-      className="w-full h-full flex justify-center items-center overflow-hidden relative bg-repeat"
-      style={{
-         backgroundColor: '#181818',
-         backgroundImage: 'linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px)',
-         backgroundSize: '20px 20px',
-      }}
+      className="flex-1 bg-gray-900 overflow-hidden relative"
       onWheel={handleWheel}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
@@ -337,76 +331,69 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
       onMouseLeave={handleMouseUp}
     >
       <div
-        className="relative"
-        style={{ transform: `translate(${pan.x}px, ${pan.y}px)` }}
+        className="absolute"
+        style={{
+          width: `${docSettings.width}px`,
+          height: `${docSettings.height}px`,
+          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+          transformOrigin: '0 0',
+          background: docSettings.background === 'Transparent' 
+              ? `repeating-conic-gradient(#808080 0% 25%, transparent 0% 50%)`
+              : 'transparent',
+          backgroundSize: '20px 20px',
+        }}
       >
-        <div 
-            className="shadow-2xl relative" 
-            style={{ 
-                width: docSettings.width, 
-                height: docSettings.height,
-                transform: `scale(${zoom})`,
-                transformOrigin: 'top left',
-                backgroundImage: 'repeating-conic-gradient(#374151 0 25%, transparent 0 50%)', 
-                backgroundSize: '20px 20px'
-            }}
-        >
-            <canvas
-                ref={displayCanvasRef}
-                width={docSettings.width}
-                height={docSettings.height}
-                className="absolute top-0 left-0"
+        <canvas
+          ref={displayCanvasRef}
+          width={docSettings.width}
+          height={docSettings.height}
+          className="absolute top-0 left-0"
+        />
+        <canvas
+            ref={selectionCanvasRef}
+            width={docSettings.width}
+            height={docSettings.height}
+            className="absolute top-0 left-0 pointer-events-none"
+        />
+        <canvas
+            ref={snapLinesCanvasRef}
+            width={docSettings.width}
+            height={docSettings.height}
+            className="absolute top-0 left-0 pointer-events-none"
+        />
+        <Canvas
+            width={docSettings.width}
+            height={docSettings.height}
+            isLocked={activeLayer?.isLocked ?? false}
+            isBackground={activeLayer?.isBackground ?? false}
+            onAttemptEditBackgroundLayer={onAttemptEditBackgroundLayer}
+            selectionRect={selection?.rect ?? null}
+            onSelectionChange={onSelectionChange}
+            onSelectionPreview={onSelectionPreview}
+            onDrawEnd={onDrawEnd}
+            zoom={zoom}
+            layers={layers}
+            onSelectLayer={onSelectLayer}
+            moveSession={moveSession}
+            onMoveStart={onMoveStart}
+            onMoveUpdate={onMoveUpdate}
+            onMoveCommit={onMoveCommit}
+            isSpacebarDown={isSpacebarDown}
+            imageDataToRender={activeLayer?.type === 'pixel' ? activeLayer.imageData : null}
+            onAddShapeLayer={onAddShapeLayer}
+            {...toolProps}
+            activeSubTool={activeSubTool}
+            activeTool={activeTool}
+        />
+        {activeLayer && !activeLayer.isBackground && (activeSubTool === 'move' || activeSubTool === 'transform') && (
+           <TransformControls 
+                layer={activeLayer}
+                zoom={zoom}
+                pan={pan}
+                onTransformStart={onTransformStart}
             />
-            {isInteractionToolActive && (
-              <Canvas
-                  width={docSettings.width}
-                  height={docSettings.height}
-                  activeTool={activeTool}
-                  activeSubTool={activeSubTool}
-                  isLocked={activeLayer?.isLocked || isTransforming}
-                  isBackground={activeLayer?.isBackground}
-                  onAttemptEditBackgroundLayer={onAttemptEditBackgroundLayer}
-                  selectionRect={selection?.rect || null}
-                  onSelectionChange={onSelectionChange}
-                  onSelectionPreview={onSelectionPreview}
-                  onDrawEnd={onDrawEnd}
-                  zoom={zoom}
-                  layers={layers}
-                  onSelectLayer={onSelectLayer}
-                  moveSession={moveSession}
-                  onMoveStart={onMoveStart}
-                  onMoveUpdate={onMoveUpdate}
-                  onMoveCommit={onMoveCommit}
-                  isSpacebarDown={isSpacebarDown}
-                  {...toolProps}
-              />
-            )}
-             <canvas
-              ref={selectionCanvasRef}
-              width={docSettings.width}
-              height={docSettings.height}
-              className="absolute top-0 left-0 pointer-events-none"
-            />
-             <canvas
-              ref={snapLinesCanvasRef}
-              width={docSettings.width}
-              height={docSettings.height}
-              className="absolute top-0 left-0 pointer-events-none"
-            />
-            {showTransformControls && activeLayer && (
-                <TransformControls 
-                    layer={transformSession?.layer ?? activeLayer}
-                    zoom={zoom}
-                    pan={pan}
-                    onTransformStart={onTransformStart}
-                    onTransformUpdate={onTransformUpdate}
-                    onTransformCommit={onTransformCommit}
-                    onTransformCancel={onTransformCancel}
-                />
-            )}
-        </div>
+        )}
       </div>
-      {renderFloatingActionBar()}
     </div>
   );
 };

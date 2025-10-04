@@ -27,6 +27,8 @@ interface CanvasProps {
   onSelectionChange: (rect: { x: number, y: number, width: number, height: number } | null) => void;
   onSelectionPreview: (rect: { x: number, y: number, width: number, height: number } | null) => void;
   onDrawEnd: (imageData: ImageData) => void;
+  // FIX: Add onAddShapeLayer to props to allow creating new shape layers.
+  onAddShapeLayer: (rect: { x: number, y: number, width: number, height: number }) => void;
   zoom?: number;
   layers: Layer[];
   onSelectLayer: (id: string) => void;
@@ -61,12 +63,11 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>((props, ref) => {
         onAttemptEditBackgroundLayer, selectionRect, onSelectionChange, onSelectionPreview, 
         onDrawEnd, zoom = 1, layers, onSelectLayer,
         moveSession, onMoveStart, onMoveUpdate, onMoveCommit, isSpacebarDown,
-        imageDataToRender
+        imageDataToRender, onAddShapeLayer
     } = props;
     
     const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
     const interactionCanvasRef = useRef<HTMLDivElement>(null);
-    const hitTestCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
     const isDrawing = useRef(false);
     const lastPos = useRef<{ x: number, y: number } | null>(null);
@@ -151,22 +152,13 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>((props, ref) => {
     };
     
     const hitTest = (x: number, y: number): Layer | null => {
-        if (!hitTestCanvasRef.current) {
-            hitTestCanvasRef.current = document.createElement('canvas');
-        }
-        const hitCanvas = hitTestCanvasRef.current;
-        const ctx = hitCanvas.getContext('2d', { willReadFrequently: true });
-        if (!ctx) return null;
-        
         // Iterate from top layer to bottom
         for (let i = layers.length - 1; i >= 0; i--) {
             const layer = layers[i];
-            if (!layer.isVisible || !layer.imageData) continue;
+            if (!layer.isVisible) continue;
 
-            hitCanvas.width = layer.width;
-            hitCanvas.height = layer.height;
-            ctx.putImageData(layer.imageData, 0, 0);
-
+            // Create an inverse transformation matrix to map the click coordinates
+            // from canvas space to the layer's local space.
             const matrix = new DOMMatrix()
                 .translate(layer.x, layer.y)
                 .rotate(layer.rotation)
@@ -176,14 +168,33 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>((props, ref) => {
             const inverseMatrix = matrix.inverse();
             const localPoint = new DOMPoint(x, y).matrixTransform(inverseMatrix);
 
+            // Check if the click is within the layer's bounding box
             if (localPoint.x >= 0 && localPoint.x < layer.width && localPoint.y >= 0 && localPoint.y < layer.height) {
-                const pixel = ctx.getImageData(localPoint.x, localPoint.y, 1, 1).data;
-                if (pixel[3] > 0) {
+                
+                // For shape layers, a hit within the bounding box is enough.
+                if (layer.type === 'shape') {
                     return layer;
                 }
+
+                // For pixel layers, check for non-transparent pixels.
+                // Empty layers (imageData is null) cannot be moved.
+                if (layer.type === 'pixel' && layer.imageData) {
+                    const localX = Math.floor(localPoint.x);
+                    const localY = Math.floor(localPoint.y);
+
+                    // Calculate the index for the alpha channel in the ImageData array
+                    const alphaIndex = (localY * layer.imageData.width + localX) * 4 + 3;
+                    
+                    // If the alpha value is greater than 0, it's a hit.
+                    if (layer.imageData.data[alphaIndex] > 0) {
+                        return layer;
+                    }
+                }
+                
+                // If it's an empty pixel layer or a transparent part of a pixel layer, continue checking layers below.
             }
         }
-        return null;
+        return null; // No layer was hit
     }
 
 
@@ -311,23 +322,20 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>((props, ref) => {
                     handleDrawEnd();
                     break;
                 case EditorTool.SHAPES:
+                    // FIX: Instead of rasterizing the shape, call onAddShapeLayer to create a new vector shape layer.
                      if (shapeStartPos.current) {
                         const rect = drawingCanvasRef.current!.getBoundingClientRect();
                         const x = (e.clientX - rect.left) / zoom;
                         const y = (e.clientY - rect.top) / zoom;
-                        if (selectionRect) {
-                            drawCtx.save();
-                            drawCtx.beginPath();
-                            drawCtx.rect(selectionRect.x, selectionRect.y, selectionRect.width, selectionRect.height);
-                            drawCtx.clip();
+                        const finalRect = {
+                            x: Math.min(shapeStartPos.current.x, x),
+                            y: Math.min(shapeStartPos.current.y, y),
+                            width: Math.abs(x - shapeStartPos.current.x),
+                            height: Math.abs(y - shapeStartPos.current.y),
+                        };
+                        if (finalRect.width > 2 && finalRect.height > 2) {
+                            onAddShapeLayer(finalRect);
                         }
-                        drawCtx.strokeStyle = foregroundColor;
-                        drawCtx.lineWidth = 2;
-                        drawCtx.strokeRect(shapeStartPos.current.x, shapeStartPos.current.y, x - shapeStartPos.current.x, y - shapeStartPos.current.y);
-                        if (selectionRect) {
-                            drawCtx.restore();
-                        }
-                        handleDrawEnd();
                     }
                     break;
                 case EditorTool.SELECT:

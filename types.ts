@@ -70,6 +70,13 @@ export interface RecentProject extends DocumentSettings {
 
 export type BlendMode = 'normal' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten' | 'color-dodge' | 'color-burn' | 'hard-light' | 'soft-light' | 'difference' | 'exclusion' | 'hue' | 'saturation' | 'color' | 'luminosity';
 
+interface ShapeProps {
+  type: 'rectangle';
+  fill: string;
+  stroke: string | null;
+  strokeWidth: number;
+}
+
 
 /**
  * Represents a single layer in the editor.
@@ -79,6 +86,7 @@ export type BlendMode = 'normal' | 'multiply' | 'screen' | 'overlay' | 'darken' 
 export interface Layer {
   id: string;
   name: string;
+  type: 'pixel' | 'shape';
   isVisible: boolean;
   isLocked: boolean;
   isBackground?: boolean; 
@@ -90,11 +98,14 @@ export interface Layer {
   // Transformation properties
   x: number; // Center X coordinate relative to the document
   y: number; // Center Y coordinate relative to the document
-  width: number; // The intrinsic width of the imageData
-  height: number; // The intrinsic height of the imageData
+  width: number; // The intrinsic width of the imageData or shape
+  height: number; // The intrinsic height of the imageData or shape
   rotation: number; // In degrees
   scaleX: number; // Multiplier
   scaleY: number; // Multiplier
+
+  // Shape specific properties
+  shapeProps?: ShapeProps;
 }
 
 export interface TransformSession {
@@ -108,6 +119,7 @@ export interface TransformSession {
     startZoom: number;
     mode: TransformMode;
     previousSubTool: AnySubTool | null;
+    startCursor: string;
 }
 
 export interface SnapLine {
@@ -153,4 +165,12 @@ export interface SerializedLayer extends Omit<Layer, 'imageData' | 'thumbnail'> 
 export interface ProjectFile {
   documentSettings: DocumentSettings;
   layers: SerializedLayer[];
+}
+
+/**
+ * Represents a single state in the editor's history.
+ */
+export interface HistoryState {
+  layers: Layer[];
+  action: string; // e.g., "Brush Stroke", "Add Layer"
 }
