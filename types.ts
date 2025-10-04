@@ -27,6 +27,15 @@ export enum EditorTool {
 }
 
 export type TransformSubTool = 'move' | 'transform' | 'crop';
+export type GenerativeSubTool = 'fill' | 'expand' | 'textToImage';
+export type AdjustSubTool = 'brightnessContrast' | 'levels' | 'curves' | 'exposure';
+export type SelectSubTool = 'rectangle' | 'ellipse' | 'lasso' | 'subject';
+export type RetouchSubTool = 'spotHeal' | 'cloneStamp' | 'patch';
+export type QuickActionsSubTool = 'removeBackground' | 'enhance';
+export type EffectsSubTool = 'blur' | 'sharpen' | 'noise';
+export type ShapesSubTool = 'rectangle' | 'ellipse' | 'polygon' | 'line';
+export type TypeSubTool = 'horizontal' | 'vertical';
+
 
 export type AutoSelectType = 'Layer' | 'Group';
 

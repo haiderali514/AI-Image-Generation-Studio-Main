@@ -1,4 +1,5 @@
 
+
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { DocumentSettings, EditorTool, Layer, TransformSubTool, BrushShape, PaintSubTool } from '../../types';
 import EditorHeader from './EditorHeader';
@@ -31,7 +32,6 @@ const MIN_ZOOM = 0.05; // 5%
 const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onClose, onNew, initialFile }) => {
   const [docSettings, setDocSettings] = useState(initialDocumentSettings);
   const [activeTool, setActiveTool] = useState<EditorTool>(EditorTool.TRANSFORM);
-  const [activeSubTool, setActiveSubTool] = useState<TransformSubTool>('move');
   const [activePaintSubTool, setActivePaintSubTool] = useState<PaintSubTool>('brush');
   const [zoom, setZoom] = useState(1);
   const [selection, setSelection] = useState<{ rect: { x: number; y: number; width: number; height: number; } } | null>(null);
@@ -204,7 +204,7 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
     if (historyIndex > 0) setHistoryIndex(historyIndex - 1);
   };
   const handleRedo = () => {
-    if (historyIndex < history.length - 1) setHistoryIndex(historyIndex + 1);
+    if (historyIndex < history.length - 1) setHistoryIndex(historyIndex - 1);
   };
   
   const handleAddLayer = () => {
@@ -315,9 +315,6 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
 
   const handleToolSelect = (tool: EditorTool) => {
     setSelectionPreview(null);
-    if (tool === EditorTool.TRANSFORM) {
-        setActiveSubTool('move');
-    }
     if (tool === EditorTool.PAINT) {
         setActivePaintSubTool('brush');
     }
@@ -567,9 +564,6 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
         {isPropertiesPanelOpen && (
             <PropertiesPanel 
               activeTool={activeTool}
-              activeSubTool={activeSubTool}
-              onSubToolChange={setActiveSubTool}
-              autoSelect={'Layer'} onAutoSelectChange={() => {}}
               onClose={() => setIsPropertiesPanelOpen(false)}
               activePaintSubTool={activePaintSubTool}
               onPaintSubToolChange={setActivePaintSubTool}
@@ -582,7 +576,7 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
         <main className="flex-1 flex flex-col bg-[#181818] overflow-hidden">
           <CanvasArea
             document={docSettings} layers={currentLayers} activeLayerId={activeLayerId}
-            activeTool={activeTool} activeSubTool={activeSubTool}
+            activeTool={activeTool}
             zoom={zoom} onZoom={handleZoom}
             selection={selection} onSelectionChange={handleSelectionChange}
             selectionPreview={selectionPreview}
