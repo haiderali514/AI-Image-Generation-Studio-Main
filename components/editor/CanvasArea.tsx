@@ -26,6 +26,8 @@ interface CanvasAreaProps {
   activeSubTool: AnySubTool;
   zoom: number;
   onZoom: (update: number | 'in' | 'out' | 'reset') => void;
+  pan: { x: number; y: number; };
+  onPanChange: (pan: { x: number; y: number; }) => void;
   viewResetKey: number;
   selection: { rect: { x: number; y: number; width: number; height: number; } } | null;
   onSelectionChange: (rect: { x: number; y: number; width: number; height: number; } | null) => void;
@@ -41,7 +43,7 @@ interface CanvasAreaProps {
   onMoveCommit: (finalMouseX: number, finalMouseY: number) => void;
   // Transform Props
   transformSession: TransformSession | null;
-  onTransformStart: (layer: Layer, handle: string, e: React.MouseEvent) => void;
+  onTransformStart: (layer: Layer, handle: string, e: React.MouseEvent, canvasMousePos: { x: number; y: number }) => void;
   onTransformUpdate: (newLayer: Layer) => void;
   onTransformCommit: () => void;
   onTransformCancel: () => void;
@@ -59,8 +61,7 @@ interface CanvasAreaProps {
 }
 
 const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
-  const { document: docSettings, layers, activeLayerId, activeTool, activeSubTool, zoom, onZoom, viewResetKey, selection, onSelectionChange, selectionPreview, onSelectionPreview, onDrawEnd, onAttemptEditBackgroundLayer, onSelectLayer, moveSession, onMoveStart, onMoveUpdate, onMoveCommit, transformSession, onTransformStart, onTransformUpdate, onTransformCommit, onTransformCancel, snapLines, ...toolProps } = props;
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const { document: docSettings, layers, activeLayerId, activeTool, activeSubTool, zoom, onZoom, pan, onPanChange, viewResetKey, selection, onSelectionChange, selectionPreview, onSelectionPreview, onDrawEnd, onAttemptEditBackgroundLayer, onSelectLayer, moveSession, onMoveStart, onMoveUpdate, onMoveCommit, transformSession, onTransformStart, onTransformUpdate, onTransformCommit, onTransformCancel, snapLines, ...toolProps } = props;
   const containerRef = useRef<HTMLDivElement>(null);
   const panStart = useRef({ x: 0, y: 0 });
   const isPanning = useRef(false);
@@ -78,7 +79,7 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
         const { clientWidth, clientHeight } = container;
         const initialPanX = (clientWidth - docSettings.width * zoom) / 2;
         const initialPanY = (clientHeight - docSettings.height * zoom) / 2;
-        setPan({ x: initialPanX, y: initialPanY });
+        onPanChange({ x: initialPanX, y: initialPanY });
     }
   }, [docSettings.width, docSettings.height, viewResetKey]);
 
@@ -142,7 +143,7 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
       const newPanX = mouseX - pointX * clampedZoom;
       const newPanY = mouseY - pointY * clampedZoom;
 
-      setPan({ x: newPanX, y: newPanY });
+      onPanChange({ x: newPanX, y: newPanY });
       onZoom(clampedZoom);
     } else {
       // Scroll = Pan
@@ -156,10 +157,10 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
         dy = 0;
       }
 
-      setPan(prevPan => ({
-        x: prevPan.x - dx,
-        y: prevPan.y - dy
-      }));
+      onPanChange({
+        x: pan.x - dx,
+        y: pan.y - dy
+      });
     }
   };
 
@@ -180,7 +181,7 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
   const handleMouseMove = (e: React.MouseEvent) => {
     if (isPanning.current) {
       e.preventDefault();
-      setPan({
+      onPanChange({
         x: e.clientX - panStart.current.x,
         y: e.clientY - panStart.current.y,
       });
@@ -273,8 +274,8 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
     if (snapLines.length > 0) {
         ctx.save();
         ctx.strokeStyle = '#FF00FF'; // Pink
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 1 / zoom;
+        ctx.setLineDash([4 / zoom, 4 / zoom]);
         
         snapLines.forEach(line => {
             ctx.beginPath();
@@ -289,10 +290,15 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
         });
         ctx.restore();
     }
-  }, [snapLines]);
+  }, [snapLines, zoom]);
 
   const activeLayer = layers.find(l => l.id === activeLayerId);
-  const showTransformControls = activeTool === EditorTool.TRANSFORM && activeSubTool === 'transform' && activeLayer && !activeLayer.isBackground && !activeLayer.isLocked;
+  const showTransformControls = 
+    activeLayer && 
+    !activeLayer.isBackground && 
+    !activeLayer.isLocked &&
+    activeTool === EditorTool.TRANSFORM && 
+    (activeSubTool === 'move' || activeSubTool === 'transform');
   
   const isTransforming = !!transformSession;
   const isCropping = activeTool === EditorTool.TRANSFORM && activeSubTool === 'crop';
@@ -387,12 +393,15 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
               height={docSettings.height}
               className="absolute top-0 left-0 pointer-events-none"
             />
-            {(showTransformControls || isTransforming) && activeLayer && (
+            {showTransformControls && activeLayer && (
                 <TransformControls 
                     layer={transformSession?.layer ?? activeLayer}
                     zoom={zoom}
+                    pan={pan}
                     onTransformStart={onTransformStart}
                     onTransformUpdate={onTransformUpdate}
+                    onTransformCommit={onTransformCommit}
+                    onTransformCancel={onTransformCancel}
                 />
             )}
         </div>

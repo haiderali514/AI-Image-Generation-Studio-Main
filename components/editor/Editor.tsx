@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { DocumentSettings, EditorTool, Layer, TransformSubTool, BrushShape, PaintSubTool, AnySubTool, TransformSession, MoveSession, SnapLine } from '../../types';
+import { DocumentSettings, EditorTool, Layer, TransformSubTool, BrushShape, PaintSubTool, AnySubTool, TransformSession, MoveSession, SnapLine, TransformMode } from '../../types';
 import EditorHeader from './EditorHeader';
 import CanvasArea from './CanvasArea';
 import Toolbar from './Toolbar';
@@ -21,11 +21,24 @@ interface EditorProps {
 const MAX_ZOOM = 5; // 500%
 const MIN_ZOOM = 0.01; // 1%
 
+// Helper function to rotate a point around an origin
+const rotatePoint = (point: { x: number; y: number }, origin: { x: number; y: number }, angle: number) => {
+    const rad = angle * Math.PI / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const dx = point.x - origin.x;
+    const dy = point.y - origin.y;
+    const newX = dx * cos - dy * sin + origin.x;
+    const newY = dx * sin + dy * cos + origin.y;
+    return { x: newX, y: newY };
+};
+
 const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onClose, onNew, initialFile }) => {
   const [docSettings, setDocSettings] = useState(initialDocumentSettings);
   const [activeTool, setActiveTool] = useState<EditorTool>(EditorTool.TRANSFORM);
   const [activeSubTool, setActiveSubTool] = useState<AnySubTool>('move');
   const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
   const [viewResetKey, setViewResetKey] = useState(0);
   const [selection, setSelection] = useState<{ rect: { x: number; y: number; width: number; height: number; } } | null>(null);
   const [selectionPreview, setSelectionPreview] = useState<{ rect: { x: number; y: number; width: number; height: number; } } | null>(null);
@@ -41,6 +54,7 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
   const [transformSession, setTransformSession] = useState<TransformSession | null>(null);
   const [moveSession, setMoveSession] = useState<MoveSession | null>(null);
   const [snapLines, setSnapLines] = useState<SnapLine[]>([]);
+  const [transformMode, setTransformMode] = useState<TransformMode>('free-transform');
 
   // Tool settings state
   const [foregroundColor, setForegroundColor] = useState('#000000');
@@ -148,6 +162,7 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
 
   const handleResetView = () => {
     setZoom(1);
+    setPan({x:0, y:0}); // Also reset pan
     setViewResetKey(k => k + 1);
   };
 
@@ -383,48 +398,153 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
   };
   
   // --- TRANSFORM TOOL LOGIC ---
-  const handleTransformStart = (layer: Layer, handle: string, e: React.MouseEvent) => {
+  const handleTransformStart = (layer: Layer, handle: string, e: React.MouseEvent, canvasMousePos: {x: number, y: number}) => {
     setActiveLayerId(layer.id);
+    let previousSubTool: AnySubTool | null = null;
+    if (activeTool === EditorTool.TRANSFORM && activeSubTool === 'move') {
+        previousSubTool = 'move';
+        setActiveSubTool('transform');
+    }
+
     setTransformSession({
         layer: layer,
         handle: handle,
         isAspectRatioLocked: e.shiftKey,
         originalLayer: layer,
         startMouse: { x: e.clientX, y: e.clientY },
+        startCanvasMouse: canvasMousePos,
+        startPan: pan,
+        startZoom: zoom,
+        mode: transformMode,
+        previousSubTool: previousSubTool,
     });
   };
 
   const handleTransformUpdate = (newLayer: Layer) => {
     if (transformSession) {
       setTransformSession(prev => prev ? { ...prev, layer: newLayer } : null);
+      handleUpdateLayerTransform(newLayer.id, {
+        x: newLayer.x,
+        y: newLayer.y,
+        rotation: newLayer.rotation,
+        scaleX: newLayer.scaleX,
+        scaleY: newLayer.scaleY,
+      });
     }
   };
 
   const handleTransformCommit = useCallback(() => {
     if (!transformSession) return;
-    const { layer } = transformSession;
+    const { layer, previousSubTool } = transformSession;
     const newLayers = currentLayers.map(l => l.id === layer.id ? layer : l);
     commit(newLayers, layer.id);
+    if (previousSubTool) {
+        setActiveSubTool(previousSubTool);
+    }
     setTransformSession(null);
   }, [transformSession, currentLayers, commit]);
 
   const handleTransformCancel = useCallback(() => {
     if (transformSession) {
-        setTransformSession(null); // Just discard changes
+        const { originalLayer, previousSubTool } = transformSession;
+        const newLayers = currentLayers.map(l => l.id === originalLayer.id ? originalLayer : l);
+        const newHistory = [...history];
+        newHistory[historyIndex] = newLayers;
+        setHistory(newHistory);
+        if (previousSubTool) {
+            setActiveSubTool(previousSubTool);
+        }
+        setTransformSession(null);
     }
-  }, [transformSession]);
+  }, [transformSession, currentLayers, history, historyIndex]);
+
+  // Global listeners for transform drag
+  useEffect(() => {
+    if (!transformSession) return;
+
+    const { originalLayer, handle, startMouse, startCanvasMouse, startPan, startZoom, isAspectRatioLocked } = transformSession;
+    const layerCenter = { x: originalLayer.x, y: originalLayer.y };
+
+    const handleMouseMove = (e: MouseEvent) => {
+        e.preventDefault();
+        
+        const currentCanvasMouse = {
+            x: (e.clientX - pan.x) / zoom,
+            y: (e.clientY - pan.y) / zoom
+        };
+
+        let newLayer = { ...originalLayer };
+
+        if (handle === 'rotate') {
+            const startAngle = Math.atan2(startCanvasMouse.y - layerCenter.y, startCanvasMouse.x - layerCenter.x);
+            const currentAngle = Math.atan2(currentCanvasMouse.y - layerCenter.y, currentCanvasMouse.x - layerCenter.x);
+            const angleDiff = (currentAngle - startAngle) * 180 / Math.PI;
+            newLayer.rotation = originalLayer.rotation + angleDiff;
+        } else {
+             // Scaling logic
+            const originalDx = startCanvasMouse.x - layerCenter.x;
+            const originalDy = startCanvasMouse.y - layerCenter.y;
+            
+            // Un-rotate the original delta to get it in the layer's local space
+            const unrotatedOriginalVector = rotatePoint({x: originalDx, y: originalDy}, {x:0, y:0}, -originalLayer.rotation);
+
+            const currentDx = currentCanvasMouse.x - layerCenter.x;
+            const currentDy = currentCanvasMouse.y - layerCenter.y;
+            const unrotatedCurrentVector = rotatePoint({x: currentDx, y: currentDy}, {x:0, y:0}, -originalLayer.rotation);
+
+            let scaleX = originalLayer.scaleX;
+            let scaleY = originalLayer.scaleY;
+
+            let fx = unrotatedOriginalVector.x !== 0 ? unrotatedCurrentVector.x / unrotatedOriginalVector.x : 1;
+            let fy = unrotatedOriginalVector.y !== 0 ? unrotatedCurrentVector.y / unrotatedOriginalVector.y : 1;
+
+            if (handle.includes('left')) fx *= -1;
+            if (handle.includes('top')) fy *= -1;
+
+            if (handle.includes('center')) { // Edge handles
+                if(handle.includes('top') || handle.includes('bottom')) scaleY *= fy;
+                else scaleX *= fx;
+            } else { // Corner handles
+                if (isAspectRatioLocked) {
+                    const f = Math.abs(fx) > Math.abs(fy) ? fx : fy;
+                    scaleX *= f;
+                    scaleY *= f;
+                } else {
+                    scaleX *= fx;
+                    scaleY *= fy;
+                }
+            }
+            newLayer.scaleX = scaleX;
+            newLayer.scaleY = scaleY;
+        }
+
+        handleTransformUpdate(newLayer);
+    };
+
+    const handleMouseUp = (e: MouseEvent) => {
+        handleTransformCommit();
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp, { once: true });
+
+    return () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [transformSession, pan, zoom, handleTransformUpdate, handleTransformCommit]);
   
-  // FIX: This useEffect was moved after its dependencies were declared to fix "used before declaration" errors.
+  // Keyboard listeners for undo/redo/deselect/commit transform
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
 
-      if (e.key === 'Enter' && activeTool === EditorTool.TRANSFORM && activeSubTool === 'transform') {
+      if (e.key === 'Enter' && transformSession) {
         e.preventDefault();
         handleTransformCommit();
       }
-      if (e.key === 'Escape' && activeTool === EditorTool.TRANSFORM && activeSubTool === 'transform') {
+      if (e.key === 'Escape' && transformSession) {
         e.preventDefault();
         handleTransformCancel();
       }
@@ -444,7 +564,7 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selection, activeTool, activeSubTool, handleTransformCommit, handleTransformCancel, handleUndo, handleRedo]);
+  }, [selection, transformSession, handleTransformCommit, handleTransformCancel, handleUndo, handleRedo]);
 
   // --- END TRANSFORM TOOL LOGIC ---
 
@@ -723,10 +843,12 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
             activeTool={activeTool}
             activeSubTool={activeSubTool}
             zoom={zoom} onZoom={handleZoom}
+            pan={pan} onPanChange={setPan}
             viewResetKey={viewResetKey}
             selection={selection} onSelectionChange={handleSelectionChange}
             selectionPreview={selectionPreview}
             onSelectionPreview={handleSelectionPreview}
+            // FIX: The value for the onDrawEnd prop was misspelled. It should be handleDrawEnd.
             onDrawEnd={handleDrawEnd} onAttemptEditBackgroundLayer={handleAttemptEditBackground}
             onSelectLayer={setActiveLayerId}
             moveSession={moveSession}

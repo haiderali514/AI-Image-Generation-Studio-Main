@@ -42,6 +42,7 @@ export type AnySubTool = TransformSubTool | GenerativeSubTool | AdjustSubTool | 
 
 
 export type AutoSelectType = 'Layer' | 'Group';
+export type TransformMode = 'free-transform' | 'skew' | 'distort' | 'perspective';
 
 /**
  * Defines the properties for a new document created by the user.
@@ -96,13 +97,17 @@ export interface Layer {
   scaleY: number; // Multiplier
 }
 
-// FIX: Add TransformSession interface for use in Editor and related components.
 export interface TransformSession {
     layer: Layer;
     handle: string; // e.g., 'bottom-right', 'rotate'
     isAspectRatioLocked: boolean;
     originalLayer: Layer;
-    startMouse: { x: number; y: number };
+    startMouse: { x: number; y: number }; // Screen-relative
+    startCanvasMouse: { x: number; y: number }; // Canvas-relative
+    startPan: { x: number; y: number };
+    startZoom: number;
+    mode: TransformMode;
+    previousSubTool: AnySubTool | null;
 }
 
 export interface SnapLine {

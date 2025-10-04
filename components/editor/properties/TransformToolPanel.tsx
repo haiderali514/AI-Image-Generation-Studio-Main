@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { TransformSubTool, AnySubTool, Layer } from '../../../types';
 import CollapsibleSection from './CollapsibleSection';
@@ -30,6 +31,12 @@ const MoveToolProperties: React.FC = () => (
                 <button title="Align Vertical Centers" className="p-2 rounded bg-[#363636] hover:bg-gray-700"><Icon type="align-center-vertical-2" /></button>
                 <button title="Align Bottom Edges" className="p-2 rounded bg-[#363636] hover:bg-gray-700"><Icon type="align-bottom-2" /></button>
              </div>
+        </div>
+        <div>
+          <button className="w-full flex justify-between items-center text-left text-sm text-gray-300 hover:bg-[#363636]/60 p-2 rounded-md">
+            <span>Advanced settings</span>
+            <Icon type="chevron-right" />
+          </button>
         </div>
     </div>
 );
@@ -101,7 +108,18 @@ const TransformToolPanel: React.FC<TransformToolPanelProps> = ({ transformProps,
                 <MoveToolProperties />
             </CollapsibleSection>
             <CollapsibleSection title="Transform" icon={<Icon type="transform" />} isOpen={activeSubTool === 'transform'} onToggle={() => handleToggle('transform')}>
-                <TransformToolProperties transformProps={transformProps} />
+                 <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-400 mb-1">Mode</label>
+                        <div className="flex items-center space-x-1 bg-[#1E1E1E] p-1 rounded-lg">
+                            <button className="flex-1 p-1.5 rounded-md text-sm bg-[#363636] text-white">Free Transform</button>
+                            <button className="flex-1 p-1.5 rounded-md text-sm hover:bg-[#363636]/60 text-gray-300">Skew</button>
+                            <button className="flex-1 p-1.5 rounded-md text-sm hover:bg-[#363636]/60 text-gray-300">Distort</button>
+                            <button className="flex-1 p-1.5 rounded-md text-sm hover:bg-[#363636]/60 text-gray-300">Perspective</button>
+                        </div>
+                    </div>
+                    <TransformToolProperties transformProps={transformProps} />
+                </div>
             </CollapsibleSection>
             <CollapsibleSection title="Crop" icon={<Icon type="crop" />} isOpen={activeSubTool === 'crop'} onToggle={() => handleToggle('crop')}>
                 <CropToolProperties />

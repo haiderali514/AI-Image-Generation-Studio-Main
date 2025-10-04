@@ -1,4 +1,5 @@
-import React, { useRef, useEffect } from 'react';
+
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Layer, TransformSession } from '../../types';
 
 type HandleType = 'top-left' | 'top-center' | 'top-right' | 'middle-left' | 'middle-right' | 'bottom-left' | 'bottom-center' | 'bottom-right' | 'rotate';
@@ -6,35 +7,12 @@ type HandleType = 'top-left' | 'top-center' | 'top-right' | 'middle-left' | 'mid
 interface TransformControlsProps {
     layer: Layer;
     zoom: number;
-    onTransformStart: (layer: Layer, handle: string, e: React.MouseEvent) => void;
+    pan: { x: number, y: number };
+    onTransformStart: (layer: Layer, handle: string, e: React.MouseEvent, canvasMousePos: {x: number, y: number}) => void;
     onTransformUpdate: (newLayer: Layer) => void;
+    onTransformCommit: () => void;
+    onTransformCancel: () => void;
 }
-
-const getHandleCursor = (handle: HandleType, rotation: number) => {
-    const baseCursors: { [key: string]: number } = {
-        'ns-resize': 0, 'nesw-resize': 45, 'ew-resize': 90, 'nwse-resize': 135
-    };
-    const directions = ['ns-resize', 'nesw-resize', 'ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize', 'ew-resize', 'nwse-resize'];
-    
-    const cursorForHandle: { [key in HandleType]?: string } = {
-        'top-center': 'ns-resize', 'bottom-center': 'ns-resize',
-        'middle-left': 'ew-resize', 'middle-right': 'ew-resize',
-        'top-left': 'nwse-resize', 'bottom-right': 'nwse-resize',
-        'top-right': 'nesw-resize', 'bottom-left': 'nesw-resize',
-        'rotate': 'crosshair'
-    };
-    
-    const baseCursor = cursorForHandle[handle];
-    if (!baseCursor) return 'default';
-    if (baseCursor === 'crosshair') return 'crosshair';
-
-    const baseAngle = baseCursors[baseCursor];
-    const totalAngle = (baseAngle + rotation) % 180;
-    const index = Math.round(totalAngle / 45);
-    return directions[index];
-};
-
-// --- Helper Functions for Transformations ---
 
 // Rotates a point around a center
 const rotatePoint = (point: {x: number, y: number}, center: {x: number, y: number}, angle: number) => {
@@ -46,103 +24,120 @@ const rotatePoint = (point: {x: number, y: number}, center: {x: number, y: numbe
     return { x: nx, y: ny };
 };
 
-const TransformControls: React.FC<TransformControlsProps> = ({ layer, zoom, onTransformStart, onTransformUpdate }) => {
-    const handleSize = 8;
-    const borderSize = 1;
-    const rotationHandleOffset = 20;
+const getSvgCursor = (type: 'rotate' | 'scale', angle: number) => {
+    const safeAngle = Math.round(angle);
+    if (type === 'rotate') {
+        const svg = `<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><g transform="rotate(${safeAngle} 16 16)"><path d="M19 8C20.6569 8 22 6.65685 22 5C22 3.34315 20.6569 2 19 2C17.3431 2 16 3.34315 16 5L16 10.125C16 10.5518 15.7518 10.932 15.342 11.0858L4.12201 15.4298C3.01579 15.8238 2.50262 17.0725 2.89662 18.1787C3.29063 19.2849 4.53934 19.7981 5.64556 19.4041L15.341 15.586C15.7508 15.4322 16 15.0519 16 14.6251V14.6251" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g></svg>`;
+        return `url('data:image/svg+xml;utf8,${encodeURIComponent(svg)}') 16 16, auto`;
+    }
+    // Scale cursor
+    const svg = `<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><g transform="rotate(${safeAngle} 16 16)"><path d="M17 15L28 4M28 4V11M28 4H21" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 17L4 28M4 28V21M4 28H11" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g></svg>`;
+    return `url('data:image/svg+xml;utf8,${encodeURIComponent(svg)}') 16 16, auto`;
+};
 
-    const dragInfo = useRef<{
-        session: TransformSession,
-        originalPoints: { tl: DOMPoint, tr: DOMPoint, bl: DOMPoint, br: DOMPoint },
-    } | null>(null);
-
-    const handleMouseDown = (e: React.MouseEvent, handle: HandleType) => {
-        e.preventDefault();
-        e.stopPropagation();
-        onTransformStart(layer, handle, e);
-    };
-
-    const handleMouseMove = (e: MouseEvent) => {
-        if (!dragInfo.current) return;
-
-        const { session } = dragInfo.current;
-        const { handle, originalLayer, startMouse } = session;
-        const currentMouse = { x: e.clientX, y: e.clientY };
-
-        const dx = (currentMouse.x - startMouse.x) / zoom;
-        const dy = (currentMouse.y - startMouse.y) / zoom;
-        
-        let newLayer = { ...originalLayer };
-
-        if (handle === 'rotate') {
-            const center = { x: originalLayer.x, y: originalLayer.y };
-            const startAngle = Math.atan2(startMouse.y / zoom - center.y, startMouse.x / zoom - center.x) * 180 / Math.PI;
-            const currentAngle = Math.atan2(currentMouse.y / zoom - center.y, currentMouse.x / zoom - center.x) * 180 / Math.PI;
-            newLayer.rotation = originalLayer.rotation + (currentAngle - startAngle);
-        } else {
-            const rad = originalLayer.rotation * Math.PI / 180;
-            const cos = Math.cos(-rad);
-            const sin = Math.sin(-rad);
-            const rotatedDx = dx * cos - dy * sin;
-            const rotatedDy = dx * sin + dy * cos;
-
-            let newScaleX = originalLayer.scaleX;
-            let newScaleY = originalLayer.scaleY;
-
-            if (handle.includes('left')) newScaleX -= rotatedDx / originalLayer.width;
-            if (handle.includes('right')) newScaleX += rotatedDx / originalLayer.width;
-            if (handle.includes('top')) newScaleY -= rotatedDy / originalLayer.height;
-            if (handle.includes('bottom')) newScaleY += rotatedDy / originalLayer.height;
-
-            if (session.isAspectRatioLocked && (handle.includes('left') || handle.includes('right'))) {
-                newScaleY = newScaleX * Math.sign(originalLayer.scaleX) * Math.sign(originalLayer.scaleY) * (originalLayer.height/originalLayer.width);
-            } else if (session.isAspectRatioLocked && (handle.includes('top') || handle.includes('bottom'))) {
-                newScaleX = newScaleY * Math.sign(originalLayer.scaleX) * Math.sign(originalLayer.scaleY) * (originalLayer.width/originalLayer.height);
-            }
-
-            const centerShiftX = (newScaleX - originalLayer.scaleX) * originalLayer.width / 2;
-            const centerShiftY = (newScaleY - originalLayer.scaleY) * originalLayer.height / 2;
-            
-            let shiftX = 0;
-            let shiftY = 0;
-
-            if(handle.includes('left')) shiftX = -centerShiftX;
-            if(handle.includes('right')) shiftX = centerShiftX;
-            if(handle.includes('top')) shiftY = -centerShiftY;
-            if(handle.includes('bottom')) shiftY = centerShiftY;
-
-            const rotatedShift = rotatePoint({x: shiftX, y: shiftY}, {x: 0, y: 0}, originalLayer.rotation);
-
-            newLayer.scaleX = newScaleX;
-            newLayer.scaleY = newScaleY;
-            newLayer.x = originalLayer.x + rotatedShift.x;
-            newLayer.y = originalLayer.y + rotatedShift.y;
-        }
-
-        onTransformUpdate(newLayer);
-    };
+const TransformControls: React.FC<TransformControlsProps> = ({ layer, zoom, pan, onTransformStart }) => {
+    const [activeInteraction, setActiveInteraction] = useState<HandleType | null>(null);
+    const controlsRef = useRef<HTMLDivElement>(null);
     
-    const handleMouseUp = () => {
-        dragInfo.current = null;
-        window.removeEventListener('mousemove', handleMouseMove);
-        window.removeEventListener('mouseup', handleMouseUp);
-    };
-
-    // Effect to manage global event listeners based on parent's session state
+    // This effect detects what handle the mouse is over and sets the cursor
     useEffect(() => {
-        if (onTransformStart) { // A bit of a hack to detect if this is the active control
-            const handleGlobalDown = (e: MouseEvent) => {
-                const target = e.target as HTMLElement;
-                // If the click is not on one of our handles, commit the transform
-                if (!target.closest('[data-transform-handle]')) {
-                    // This logic is now in Editor.tsx when tool changes
+        const controls = controlsRef.current;
+        if (!controls) return;
+        
+        const handleMouseMove = (e: MouseEvent) => {
+            const rect = controls.getBoundingClientRect();
+            
+            const boxCenterX = rect.left + rect.width / 2;
+            const boxCenterY = rect.top + rect.height / 2;
+            
+            const localMouseX = e.clientX - boxCenterX;
+            const localMouseY = e.clientY - boxCenterY;
+            
+            const rotatedMouse = rotatePoint({x: localMouseX, y: localMouseY}, {x:0,y:0}, -layer.rotation);
+            
+            const halfW = (layer.width * layer.scaleX * zoom) / 2;
+            const halfH = (layer.height * layer.scaleY * zoom) / 2;
+            
+            const corners: Record<string, {x: number, y: number, angle: number}> = {
+                'top-left': { x: -halfW, y: -halfH, angle: 135 + layer.rotation },
+                'top-right': { x: halfW, y: -halfH, angle: 45 + layer.rotation },
+                'bottom-left': { x: -halfW, y: halfH, angle: 225 + layer.rotation },
+                'bottom-right': { x: halfW, y: halfH, angle: 315 + layer.rotation },
+            };
+            
+            const ROTATION_THRESHOLD = 20;
+            const SCALE_THRESHOLD = 8;
+
+            let interaction: HandleType | null = null;
+            let cursor = 'default';
+
+            for (const [name, pos] of Object.entries(corners)) {
+                const dist = Math.hypot(rotatedMouse.x - pos.x, rotatedMouse.y - pos.y);
+                if (dist < ROTATION_THRESHOLD) {
+                    if (dist < SCALE_THRESHOLD) {
+                        interaction = name as HandleType;
+                        cursor = getSvgCursor('scale', pos.angle);
+                        break;
+                    } else {
+                        interaction = 'rotate';
+                        const angleToCenter = Math.atan2(localMouseY, localMouseX) * 180 / Math.PI;
+                        cursor = getSvgCursor('rotate', angleToCenter + 90);
+                        break;
+                    }
                 }
             }
-            document.addEventListener('mousedown', handleGlobalDown);
-            return () => document.removeEventListener('mousedown', handleGlobalDown);
-        }
-    }, [onTransformStart]);
+            
+            if (!interaction) {
+                const onTop = Math.abs(rotatedMouse.y - (-halfH)) < SCALE_THRESHOLD;
+                const onBottom = Math.abs(rotatedMouse.y - halfH) < SCALE_THRESHOLD;
+                const onLeft = Math.abs(rotatedMouse.x - (-halfW)) < SCALE_THRESHOLD;
+                const onRight = Math.abs(rotatedMouse.x - halfW) < SCALE_THRESHOLD;
+                const inX = rotatedMouse.x > -halfW && rotatedMouse.x < halfW;
+                const inY = rotatedMouse.y > -halfH && rotatedMouse.y < halfH;
+                
+                if (onTop && inX) { interaction = 'top-center'; cursor = getSvgCursor('scale', 90 + layer.rotation); }
+                else if (onBottom && inX) { interaction = 'bottom-center'; cursor = getSvgCursor('scale', 270 + layer.rotation); }
+                else if (onLeft && inY) { interaction = 'middle-left'; cursor = getSvgCursor('scale', 180 + layer.rotation); }
+                else if (onRight && inY) { interaction = 'middle-right'; cursor = getSvgCursor('scale', 0 + layer.rotation); }
+            }
 
+            setActiveInteraction(interaction);
+            document.body.style.cursor = cursor;
+        };
+
+        const handleMouseLeave = () => {
+             setActiveInteraction(null);
+             document.body.style.cursor = 'default';
+        };
+        
+        controls.addEventListener('mousemove', handleMouseMove);
+        controls.addEventListener('mouseleave', handleMouseLeave);
+
+        return () => {
+            controls.removeEventListener('mousemove', handleMouseMove);
+            controls.removeEventListener('mouseleave', handleMouseLeave);
+            // Don't reset cursor if a transform is active
+            if (document.body.style.cursor !== 'default') {
+               // document.body.style.cursor = 'default';
+            }
+        };
+    }, [layer.rotation, layer.width, layer.height, layer.scaleX, layer.scaleY, zoom]);
+    
+    const handleWrapperMouseDown = (e: React.MouseEvent) => {
+        // If the mouse is over a handle, start the transform and stop the event
+        // This prevents the underlying canvas from starting a move operation.
+        if (activeInteraction) {
+            e.preventDefault();
+            e.stopPropagation();
+            const canvasMousePos = {
+                x: (e.clientX - pan.x) / zoom,
+                y: (e.clientY - pan.y) / zoom,
+            };
+            onTransformStart(layer, activeInteraction, e, canvasMousePos);
+        }
+        // If not over a handle, do nothing. The event will not be stopped,
+        // allowing the underlying Canvas component to handle it (e.g., for moving).
+    };
 
     const transformStyle: React.CSSProperties = {
         position: 'absolute',
@@ -151,61 +146,50 @@ const TransformControls: React.FC<TransformControlsProps> = ({ layer, zoom, onTr
         top: `${layer.y}px`,
         left: `${layer.x}px`,
         transform: `translate(-50%, -50%) rotate(${layer.rotation}deg)`,
-        pointerEvents: 'none',
-        outline: `${borderSize / zoom}px solid #2F6FEF`,
-        outlineOffset: `-${borderSize / zoom}px`,
+        // This is key: if no interaction is active, let mouse events pass through
+        // to the canvas below for the move tool.
+        pointerEvents: activeInteraction ? 'auto' : 'none',
     };
 
-    const handleStyle: React.CSSProperties = {
+    const outlineStyle: React.CSSProperties = {
         position: 'absolute',
-        width: `${handleSize / zoom}px`,
-        height: `${handleSize / zoom}px`,
-        backgroundColor: 'white',
-        border: `${borderSize / zoom}px solid #2F6FEF`,
-        borderRadius: '2px',
-        pointerEvents: 'auto',
-        transform: 'translate(-50%, -50%)',
-    };
+        inset: 0,
+        outline: `${1 / zoom}px solid #2F6FEF`,
+    }
 
-    const cornerHandleStyle = { ...handleStyle, borderRadius: '50%' };
+    const handleStyle = (pos: 'corner' | 'edge'): React.CSSProperties => ({
+        position: 'absolute',
+        width: `${8 / zoom}px`,
+        height: `${8 / zoom}px`,
+        backgroundColor: 'white',
+        border: `${1 / zoom}px solid #2F6FEF`,
+        borderRadius: pos === 'corner' ? '50%' : '2px',
+        transform: 'translate(-50%, -50%)',
+        // We need pointer-events on the handles themselves to register hover/drag
+        pointerEvents: 'auto',
+    });
     
-    const handlePositions: Record<HandleType, React.CSSProperties> = {
-        'top-left': { ...cornerHandleStyle, top: '0%', left: '0%' },
-        'top-center': { ...handleStyle, top: '0%', left: '50%' },
-        'top-right': { ...cornerHandleStyle, top: '0%', left: '100%' },
-        'middle-left': { ...handleStyle, top: '50%', left: '0%' },
-        'middle-right': { ...handleStyle, top: '50%', left: '100%' },
-        'bottom-left': { ...cornerHandleStyle, top: '100%', left: '0%' },
-        'bottom-center': { ...handleStyle, top: '100%', left: '50%' },
-        'bottom-right': { ...cornerHandleStyle, top: '100%', left: '100%' },
-        'rotate': { ...cornerHandleStyle, top: `${-rotationHandleOffset / zoom}px`, left: '50%' },
-    };
+    const handles: {pos: React.CSSProperties, type: 'corner' | 'edge'}[] = [
+        {pos: { top: '0%', left: '0%' }, type: 'corner'},
+        {pos: { top: '0%', left: '50%' }, type: 'edge'},
+        {pos: { top: '0%', left: '100%' }, type: 'corner'},
+        {pos: { top: '50%', left: '0%' }, type: 'edge'},
+        {pos: { top: '50%', left: '100%' }, type: 'edge'},
+        {pos: { top: '100%', left: '0%' }, type: 'corner'},
+        {pos: { top: '100%', left: '50%' }, type: 'edge'},
+        {pos: { top: '100%', left: '100%' }, type: 'corner'},
+    ];
     
     return (
-        <div style={transformStyle}>
-             {Object.entries(handlePositions).map(([pos, style]) => (
-                 <div
-                    key={pos}
-                    data-transform-handle={pos}
-                    onMouseDown={(e) => handleMouseDown(e, pos as HandleType)}
-                    style={{
-                        ...style,
-                        cursor: getHandleCursor(pos as HandleType, layer.rotation),
-                    }}
-                 />
+        <div 
+            ref={controlsRef}
+            style={transformStyle}
+            onMouseDown={handleWrapperMouseDown}
+        >
+            <div style={outlineStyle} />
+             {handles.map((h, i) => (
+                 <div key={i} style={{...handleStyle(h.type), ...h.pos}} />
             ))}
-            {/* Line to rotation handle */}
-            <div
-                style={{
-                    position: 'absolute',
-                    top: `${-rotationHandleOffset / zoom}px`,
-                    left: '50%',
-                    width: `${borderSize / zoom}px`,
-                    height: `${rotationHandleOffset / zoom}px`,
-                    backgroundColor: '#2F6FEF',
-                    transform: 'translate(-50%, 0)',
-                }}
-            />
         </div>
     );
 };
