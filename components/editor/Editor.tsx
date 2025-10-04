@@ -1,7 +1,7 @@
 
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { DocumentSettings, EditorTool, Layer, TransformSubTool, BrushShape, PaintSubTool } from '../../types';
+import { DocumentSettings, EditorTool, Layer, TransformSubTool, BrushShape, PaintSubTool, AnySubTool } from '../../types';
 import EditorHeader from './EditorHeader';
 import CanvasArea from './CanvasArea';
 import Toolbar from './Toolbar';
@@ -26,13 +26,21 @@ interface TransformSession {
     isAspectRatioLocked: boolean;
 }
 
+interface MoveSession {
+    layerId: string;
+    startMouseX: number;
+    startMouseY: number;
+    layerStartX: number;
+    layerStartY: number;
+}
+
 const MAX_ZOOM = 32; // 3200%
 const MIN_ZOOM = 0.05; // 5%
 
 const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onClose, onNew, initialFile }) => {
   const [docSettings, setDocSettings] = useState(initialDocumentSettings);
   const [activeTool, setActiveTool] = useState<EditorTool>(EditorTool.TRANSFORM);
-  const [activePaintSubTool, setActivePaintSubTool] = useState<PaintSubTool>('brush');
+  const [activeSubTool, setActiveSubTool] = useState<AnySubTool>('move');
   const [zoom, setZoom] = useState(1);
   const [selection, setSelection] = useState<{ rect: { x: number; y: number; width: number; height: number; } } | null>(null);
   const [selectionPreview, setSelectionPreview] = useState<{ rect: { x: number; y: number; width: number; height: number; } } | null>(null);
@@ -46,6 +54,7 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [transformSession, setTransformSession] = useState<TransformSession | null>(null);
+  const [moveSession, setMoveSession] = useState<MoveSession | null>(null);
 
   // Tool settings state
   const [foregroundColor, setForegroundColor] = useState('#000000');
@@ -169,26 +178,24 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
     const activeLayer = currentLayers.find(l => l.id === activeLayerId);
     if (!activeLayer) return;
 
+    // This creates a new canvas that contains the layer's existing image data
+    // plus the new stroke drawn by the user.
     const canvas = document.createElement('canvas');
     canvas.width = docSettings.width;
     canvas.height = docSettings.height;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
     
+    // 1. Draw the original layer content
     if (activeLayer.imageData) {
         ctx.putImageData(activeLayer.imageData, 0, 0);
     }
     
-    const strokeCanvas = document.createElement('canvas');
-    strokeCanvas.width = docSettings.width;
-    strokeCanvas.height = docSettings.height;
-    const strokeCtx = strokeCanvas.getContext('2d');
-    if (!strokeCtx) return;
-    strokeCtx.putImageData(strokesImageData, 0, 0);
+    // 2. Draw the new stroke on top, using the correct composite operation (for eraser)
+    ctx.globalCompositeOperation = activeSubTool === 'eraser' ? 'destination-out' : 'source-over';
+    ctx.drawImage(strokesImageData.canvas, 0, 0);
 
-    ctx.globalCompositeOperation = activePaintSubTool === 'eraser' ? 'destination-out' : 'source-over';
-    ctx.drawImage(strokeCanvas, 0, 0);
-
+    // 3. Get the merged result
     const newImageData = ctx.getImageData(0, 0, docSettings.width, docSettings.height);
 
     const newLayers = currentLayers.map(layer => {
@@ -315,9 +322,24 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
 
   const handleToolSelect = (tool: EditorTool) => {
     setSelectionPreview(null);
-    if (tool === EditorTool.PAINT) {
-        setActivePaintSubTool('brush');
+    
+    // Set default subtool for the selected tool
+    switch (tool) {
+        case EditorTool.TRANSFORM:
+            setActiveSubTool('move');
+            break;
+        case EditorTool.PAINT:
+            setActiveSubTool('brush');
+            break;
+        case EditorTool.SELECT:
+             setActiveSubTool('rectangle');
+            break;
+        // Add other defaults as needed
+        default:
+            // setActiveSubTool(null); // Or keep the last one?
+            break;
     }
+
     if (tool === activeTool) {
         setIsPropertiesPanelOpen(prev => !prev);
     } else { 
@@ -451,6 +473,33 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
   };
   // --- END TRANSFORM TOOL LOGIC ---
 
+  // --- MOVE TOOL LOGIC ---
+  const handleMoveStart = (layerId: string, mouseX: number, mouseY: number) => {
+    const layer = currentLayers.find(l => l.id === layerId);
+    if (!layer) return;
+    setActiveLayerId(layerId);
+    setMoveSession({
+        layerId,
+        startMouseX: mouseX,
+        startMouseY: mouseY,
+        layerStartX: layer.x,
+        layerStartY: layer.y,
+    });
+  };
+
+  const handleMoveCommit = (finalMouseX: number, finalMouseY: number) => {
+    if (!moveSession) return;
+    const deltaX = (finalMouseX - moveSession.startMouseX) / zoom;
+    const deltaY = (finalMouseY - moveSession.startMouseY) / zoom;
+    const newX = moveSession.layerStartX + deltaX;
+    const newY = moveSession.layerStartY + deltaY;
+
+    handleUpdateLayerPosition(moveSession.layerId, newX, newY);
+    setMoveSession(null);
+  };
+  // --- END MOVE TOOL LOGIC ---
+
+
   const handleExport = (format: ExportFormat, quality?: number) => {
     const compositeCanvas = document.createElement('canvas');
     compositeCanvas.width = docSettings.width;
@@ -532,6 +581,8 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
         onLockToggle: () => setTransformSession(prev => prev ? {...prev, isAspectRatioLocked: !prev.isAspectRatioLocked } : null),
     };
   }, [transformSession, docSettings.width, docSettings.height]);
+  
+  const paintSubTool = activeTool === EditorTool.PAINT ? (activeSubTool as PaintSubTool) : 'brush';
 
   return (
     <div className="flex flex-col h-screen bg-[#181818] text-gray-300 font-sans text-sm">
@@ -565,8 +616,8 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
             <PropertiesPanel 
               activeTool={activeTool}
               onClose={() => setIsPropertiesPanelOpen(false)}
-              activePaintSubTool={activePaintSubTool}
-              onPaintSubToolChange={setActivePaintSubTool}
+              activeSubTool={activeSubTool}
+              onSubToolChange={setActiveSubTool}
               transformProps={transformProps}
               onImageAdded={handleImageAdded}
               brushSettings={brushSettings}
@@ -577,51 +628,19 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
           <CanvasArea
             document={docSettings} layers={currentLayers} activeLayerId={activeLayerId}
             activeTool={activeTool}
+            activeSubTool={activeSubTool}
             zoom={zoom} onZoom={handleZoom}
             selection={selection} onSelectionChange={handleSelectionChange}
             selectionPreview={selectionPreview}
             onSelectionPreview={handleSelectionPreview}
             onDrawEnd={handleDrawEnd} onAttemptEditBackgroundLayer={handleAttemptEditBackground}
-            onUpdateLayerPosition={handleUpdateLayerPosition}
+            onSelectLayer={setActiveLayerId}
+            // Move props
+            moveSession={moveSession}
+            onMoveStart={handleMoveStart}
+            onMoveCommit={handleMoveCommit}
             // Transform props
             transformSession={transformSession}
             onTransformStart={handleTransformStart}
             onTransformUpdate={handleTransformUpdate}
-            onTransformCommit={handleTransformCommit}
-            onTransformCancel={handleTransformCancel}
-            // Tool props
-            activePaintSubTool={activePaintSubTool}
-            foregroundColor={foregroundColor}
-            brushSize={brushSettings.size}
-            brushOpacity={brushSettings.opacity}
-            brushHardness={brushSettings.hardness}
-            brushShape={brushSettings.shape}
-            fontFamily="sans-serif"
-            fontSize={12}
-            textAlign="left"
-          />
-        </main>
-        <LayersPanel
-          layers={currentLayers} activeLayerId={activeLayerId}
-          onSelectLayer={setActiveLayerId} onAddLayer={handleAddLayer}
-          onDeleteLayer={handleDeleteLayer} onUpdateLayerProps={handleUpdateLayerProps}
-          onDuplicateLayer={handleDuplicateLayer} onMergeDown={handleMergeDown}
-          onConvertBackground={convertBackgroundToLayer}
-        />
-      </div>
-      <ConfirmModal
-        isOpen={isBgConvertModalOpen} onClose={() => setIsBgConvertModalOpen(false)}
-        onConfirm={handleConfirmConvertToLayer} title="Convert Background Layer?"
-        confirmText="Convert to Layer"
-      >
-        <p>The Background layer is locked. To make changes, please convert it to a normal layer.</p>
-      </ConfirmModal>
-      <ExportModal
-        isOpen={isExportModalOpen} onClose={() => setIsExportModalOpen(false)}
-        onExport={handleExport} documentName={docSettings.name}
-      />
-    </div>
-  );
-};
-
-export default Editor;
+            onTransformCommit={

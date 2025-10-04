@@ -1,7 +1,7 @@
 
 
 import React from 'react';
-import { EditorTool, BrushShape, PaintSubTool } from '../../types';
+import { EditorTool, BrushShape, PaintSubTool, AnySubTool } from '../../types';
 import Icon from '../ui/Icon';
 
 // Import all new panels
@@ -23,8 +23,8 @@ interface PropertiesPanelProps {
     onImageAdded: (url: string) => void;
     brushSettings: { size: number; hardness: number; opacity: number; shape: BrushShape; };
     onBrushSettingsChange: React.Dispatch<React.SetStateAction<{ size: number; hardness: number; opacity: number; shape: BrushShape; }>>;
-    activePaintSubTool: PaintSubTool;
-    onPaintSubToolChange: (subTool: PaintSubTool) => void;
+    activeSubTool: AnySubTool;
+    onSubToolChange: (subTool: AnySubTool) => void;
     transformProps?: {
         width: number;
         height: number;

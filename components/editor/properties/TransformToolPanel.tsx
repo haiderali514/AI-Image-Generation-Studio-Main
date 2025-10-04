@@ -1,10 +1,16 @@
 
-import React, { useState } from 'react';
-import { TransformSubTool } from '../../../types';
+import React from 'react';
+import { TransformSubTool, AnySubTool } from '../../../types';
 import CollapsibleSection from './CollapsibleSection';
 import Icon from '../../ui/Icon';
 import Select from '../../ui/Select';
 import Input from '../../ui/Input';
+
+interface TransformToolPanelProps {
+    transformProps?: any;
+    activeSubTool: AnySubTool;
+    onSubToolChange: (subTool: AnySubTool) => void;
+}
 
 // --- Sub-components for each section ---
 
@@ -92,16 +98,21 @@ const CropToolProperties: React.FC = () => {
     )
 }
 
-const TransformToolPanel: React.FC<{ transformProps?: any }> = ({ transformProps }) => {
+const TransformToolPanel: React.FC<TransformToolPanelProps> = ({ transformProps, activeSubTool, onSubToolChange }) => {
+    
+    const handleToggle = (subTool: TransformSubTool) => {
+        onSubToolChange(subTool);
+    };
+
     return (
         <div className="space-y-2">
-            <CollapsibleSection title="Move" icon={<Icon type="move" />} defaultOpen>
+            <CollapsibleSection title="Move" icon={<Icon type="move" />} isOpen={activeSubTool === 'move'} onToggle={() => handleToggle('move')}>
                 <MoveToolProperties />
             </CollapsibleSection>
-            <CollapsibleSection title="Transform" icon={<Icon type="transform" />}>
+            <CollapsibleSection title="Transform" icon={<Icon type="transform" />} isOpen={activeSubTool === 'transform'} onToggle={() => handleToggle('transform')}>
                 <TransformToolProperties transformProps={transformProps} />
             </CollapsibleSection>
-            <CollapsibleSection title="Crop" icon={<Icon type="crop" />}>
+            <CollapsibleSection title="Crop" icon={<Icon type="crop" />} isOpen={activeSubTool === 'crop'} onToggle={() => handleToggle('crop')}>
                 <CropToolProperties />
             </CollapsibleSection>
         </div>

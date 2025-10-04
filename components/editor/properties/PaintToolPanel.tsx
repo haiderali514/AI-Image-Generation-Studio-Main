@@ -1,39 +1,48 @@
 
-import React from 'react';
-import { BrushShape, PaintSubTool } from '../../../types';
+import React, { useState } from 'react';
+import { BrushShape, PaintSubTool, AnySubTool } from '../../../types';
 import Icon from '../../ui/Icon';
 import CollapsibleSection from './CollapsibleSection';
 
 interface PaintToolPanelProps {
     brushSettings: { size: number; hardness: number; opacity: number; shape: BrushShape; };
     onBrushSettingsChange: React.Dispatch<React.SetStateAction<{ size: number; hardness: number; opacity: number; shape: BrushShape; }>>;
-    activePaintSubTool: PaintSubTool;
-    onPaintSubToolChange: (subTool: PaintSubTool) => void;
+    activeSubTool: AnySubTool;
+    onSubToolChange: (subTool: AnySubTool) => void;
 }
 
-const PaintToolPanel: React.FC<PaintToolPanelProps> = ({ brushSettings, onBrushSettingsChange, activePaintSubTool, onPaintSubToolChange }) => {
+const PaintToolPanel: React.FC<PaintToolPanelProps> = ({ brushSettings, onBrushSettingsChange, activeSubTool, onSubToolChange }) => {
+    const [openSection, setOpenSection] = useState<'tool' | 'settings' | null>('tool');
+    
+    const handleToggle = (section: 'tool' | 'settings') => {
+        setOpenSection(prev => prev === section ? null : section);
+    };
+    
     const updateSetting = <K extends keyof typeof brushSettings>(key: K, value: (typeof brushSettings)[K]) => {
         onBrushSettingsChange(prev => ({ ...prev, [key]: value }));
     };
 
+    const currentPaintSubTool = activeSubTool as PaintSubTool;
+
     return (
         <div className="space-y-2">
             <CollapsibleSection 
-                title={activePaintSubTool === 'brush' ? 'Brush' : 'Eraser'} 
-                icon={<Icon type={activePaintSubTool === 'brush' ? 'paint' : 'eraser'} />} 
-                defaultOpen
+                title="Tool"
+                icon={<Icon type={currentPaintSubTool === 'brush' ? 'paint' : 'eraser'} />} 
+                isOpen={openSection === 'tool'}
+                onToggle={() => handleToggle('tool')}
             >
                 <div className="flex items-center space-x-1 bg-[#1E1E1E] p-1 rounded-lg">
                     <button
-                        onClick={() => onPaintSubToolChange('brush')}
-                        className={`flex-1 p-1.5 rounded-md flex items-center justify-center space-x-2 text-sm transition-colors ${activePaintSubTool === 'brush' ? 'bg-[#363636] text-white' : 'hover:bg-[#363636]/60 text-gray-300'}`}
+                        onClick={() => onSubToolChange('brush')}
+                        className={`flex-1 p-1.5 rounded-md flex items-center justify-center space-x-2 text-sm transition-colors ${currentPaintSubTool === 'brush' ? 'bg-[#363636] text-white' : 'hover:bg-[#363636]/60 text-gray-300'}`}
                     >
                         <Icon type="paint" />
                         <span>Brush</span>
                     </button>
                     <button
-                        onClick={() => onPaintSubToolChange('eraser')}
-                        className={`flex-1 p-1.5 rounded-md flex items-center justify-center space-x-2 text-sm transition-colors ${activePaintSubTool === 'eraser' ? 'bg-[#363636] text-white' : 'hover:bg-[#363636]/60 text-gray-300'}`}
+                        onClick={() => onSubToolChange('eraser')}
+                        className={`flex-1 p-1.5 rounded-md flex items-center justify-center space-x-2 text-sm transition-colors ${currentPaintSubTool === 'eraser' ? 'bg-[#363636] text-white' : 'hover:bg-[#363636]/60 text-gray-300'}`}
                     >
                         <Icon type="eraser" />
                         <span>Eraser</span>
@@ -41,7 +50,12 @@ const PaintToolPanel: React.FC<PaintToolPanelProps> = ({ brushSettings, onBrushS
                 </div>
             </CollapsibleSection>
 
-            <CollapsibleSection title="Brush Settings" icon={<Icon type="adjust" />} defaultOpen>
+            <CollapsibleSection 
+                title="Brush Settings" 
+                icon={<Icon type="adjust" />} 
+                isOpen={openSection === 'settings'}
+                onToggle={() => handleToggle('settings')}
+            >
                  <div className="space-y-4">
                     <div>
                         <label className="block text-sm font-medium text-gray-400 mb-1">Size</label>

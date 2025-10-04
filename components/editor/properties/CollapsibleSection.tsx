@@ -1,22 +1,21 @@
 
-import React, { useState } from 'react';
+import React from 'react';
 import Icon from '../../ui/Icon';
 
 interface CollapsibleSectionProps {
   title: string;
   icon: React.ReactNode;
   children: React.ReactNode;
-  defaultOpen?: boolean;
+  isOpen: boolean;
+  onToggle: () => void;
 }
 
-const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({ title, icon, children, defaultOpen = false }) => {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
-
+const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({ title, icon, children, isOpen, onToggle }) => {
   return (
     <div className="bg-[#1E1E1E] rounded-lg">
       <button
-        onClick={() => setIsOpen(!isOpen)}
-        className={`w-full p-2 flex items-center space-x-2 text-left transition-colors ${isOpen ? 'bg-[#363636]' : 'hover:bg-[#363636]/60'}`}
+        onClick={onToggle}
+        className={`w-full p-2 flex items-center space-x-2 text-left transition-colors rounded-t-lg ${isOpen ? 'bg-[#363636] rounded-b-none' : 'hover:bg-[#363636]/60 rounded-lg'}`}
       >
         {icon}
         <span className="flex-1 font-medium">{title}</span>
