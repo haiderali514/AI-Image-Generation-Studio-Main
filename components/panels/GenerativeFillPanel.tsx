@@ -1,8 +1,10 @@
 
+
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import Button from '../ui/Button';
 import Spinner from '../ui/Spinner';
-import Canvas, { CanvasHandle } from '../ui/Canvas';
+import Canvas from '../ui/Canvas';
+import type { CanvasHandle } from '../ui/Canvas';
 import ImageUpload from '../ui/ImageUpload';
 import * as geminiService from '../../services/geminiService';
 import { fileToBase64 } from '../../utils/imageUtils';
@@ -197,6 +199,7 @@ const GenerativeFillPanel: React.FC = () => {
                   brushOpacity={brushOpacity}
                   brushShape={brushShape}
                   activeTool={EditorTool.PAINT}
+                  activeSubTool="brush"
                   isLocked={false}
                   selectionRect={null}
                   onSelectionChange={() => {}}
@@ -207,6 +210,13 @@ const GenerativeFillPanel: React.FC = () => {
                   fontSize={0}
                   fontFamily=""
                   textAlign="left"
+                  layers={[]}
+                  onSelectLayer={() => {}}
+                  moveSession={null}
+                  onMoveStart={() => {}}
+                  onMoveUpdate={() => {}}
+                  onMoveCommit={() => {}}
+                  isSpacebarDown={false}
                 />
             </div>
             <div className="p-4 bg-gray-800/50 border border-gray-700/50 rounded-lg w-full max-w-[512px] space-y-4">

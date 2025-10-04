@@ -16,12 +16,13 @@ interface EditorHeaderProps {
   onRedo: () => void;
   zoom: number;
   onZoomChange: (zoom: number) => void;
+  onResetView: () => void;
 }
 
 const ZoomDropdown: React.FC<{ zoom: number; onZoomChange: (zoom: number) => void }> = ({ zoom, onZoomChange }) => {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
-    const zoomLevels = [0.25, 0.5, 0.75, 1, 1.5, 2, 3];
+    const zoomLevels = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 5];
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -60,7 +61,7 @@ const ZoomDropdown: React.FC<{ zoom: number; onZoomChange: (zoom: number) => voi
 };
 
 const EditorHeader: React.FC<EditorHeaderProps> = (props) => {
-  const { documentName, onClose, onNew, onSaveAs, onSaveProject, onOpenProject, canUndo, canRedo, onUndo, onRedo, zoom, onZoomChange } = props;
+  const { documentName, onClose, onNew, onSaveAs, onSaveProject, onOpenProject, canUndo, canRedo, onUndo, onRedo, zoom, onZoomChange, onResetView } = props;
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -104,6 +105,9 @@ const EditorHeader: React.FC<EditorHeaderProps> = (props) => {
           <Icon type="redo" />
         </button>
         <div className="w-px h-6 bg-gray-600/50 mx-1" />
+        <button onClick={onResetView} className="p-1.5 rounded-md hover:bg-[#363636]" title="Reset View">
+            <Icon type="fit-screen" />
+        </button>
         <ZoomDropdown zoom={zoom} onZoomChange={onZoomChange} />
       </div>
 

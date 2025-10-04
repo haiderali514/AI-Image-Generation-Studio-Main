@@ -1,102 +1,93 @@
-
-import React from 'react';
-import { TransformSubTool, AnySubTool } from '../../../types';
+import React, { useState } from 'react';
+import { TransformSubTool, AnySubTool, Layer } from '../../../types';
 import CollapsibleSection from './CollapsibleSection';
 import Icon from '../../ui/Icon';
 import Select from '../../ui/Select';
 import Input from '../../ui/Input';
 
 interface TransformToolPanelProps {
-    transformProps?: any;
+    transformProps?: {
+        layer: Layer;
+        onPropChange: (prop: keyof Layer, value: number) => void;
+        onCommit: (prop: keyof Layer, value: number) => void;
+    };
     activeSubTool: AnySubTool;
     onSubToolChange: (subTool: AnySubTool) => void;
 }
 
-// --- Sub-components for each section ---
-
-const MoveToolProperties: React.FC = () => {
-    return (
-        <div className="space-y-4">
-            <div>
-                <Select label="Auto-select" options={[{ value: 'Layer', label: 'Layer' }, { value: 'Group', label: 'Group' }]} value="Layer" onChange={() => {}} />
-            </div>
-            <div>
-                 <label className="block text-sm font-medium text-gray-400 mb-1">Align</label>
-                 <div className="grid grid-cols-6 gap-1">
-                    <button title="Align Left Edges" className="p-2 rounded bg-[#363636] hover:bg-gray-700"><Icon type="align-left-2" /></button>
-                    <button title="Align Horizontal Centers" className="p-2 rounded bg-[#363636] hover:bg-gray-700"><Icon type="align-center-horizontal-2" /></button>
-                    <button title="Align Right Edges" className="p-2 rounded bg-[#363636] hover:bg-gray-700"><Icon type="align-right-2" /></button>
-                    <button title="Align Top Edges" className="p-2 rounded bg-[#363636] hover:bg-gray-700"><Icon type="align-top-2" /></button>
-                    <button title="Align Vertical Centers" className="p-2 rounded bg-[#363636] hover:bg-gray-700"><Icon type="align-center-vertical-2" /></button>
-                    <button title="Align Bottom Edges" className="p-2 rounded bg-[#363636] hover:bg-gray-700"><Icon type="align-bottom-2" /></button>
-                 </div>
-            </div>
-            <button className="w-full flex items-center justify-between p-2 text-sm text-gray-300 hover:bg-[#363636] rounded-md">
-                <span>Advanced settings</span>
-                <Icon type="chevron-right" />
-            </button>
+const MoveToolProperties: React.FC = () => (
+    <div className="space-y-4">
+        <div>
+            <Select label="Auto-select" options={[{ value: 'Layer', label: 'Layer' }, { value: 'Group', label: 'Group' }]} value="Layer" onChange={() => {}} />
         </div>
-    );
-};
+        <div>
+             <label className="block text-sm font-medium text-gray-400 mb-1">Align</label>
+             <div className="grid grid-cols-6 gap-1">
+                <button title="Align Left Edges" className="p-2 rounded bg-[#363636] hover:bg-gray-700"><Icon type="align-left-2" /></button>
+                <button title="Align Horizontal Centers" className="p-2 rounded bg-[#363636] hover:bg-gray-700"><Icon type="align-center-horizontal-2" /></button>
+                <button title="Align Right Edges" className="p-2 rounded bg-[#363636] hover:bg-gray-700"><Icon type="align-right-2" /></button>
+                <button title="Align Top Edges" className="p-2 rounded bg-[#363636] hover:bg-gray-700"><Icon type="align-top-2" /></button>
+                <button title="Align Vertical Centers" className="p-2 rounded bg-[#363636] hover:bg-gray-700"><Icon type="align-center-vertical-2" /></button>
+                <button title="Align Bottom Edges" className="p-2 rounded bg-[#363636] hover:bg-gray-700"><Icon type="align-bottom-2" /></button>
+             </div>
+        </div>
+    </div>
+);
 
-const TransformToolProperties: React.FC<{ transformProps?: any }> = ({ transformProps }) => {
+const TransformToolProperties: React.FC<{ transformProps?: TransformToolPanelProps['transformProps'] }> = ({ transformProps }) => {
+    const [isAspectRatioLocked, setIsAspectRatioLocked] = useState(false);
+    
     if (!transformProps) {
         return <div className="text-gray-500 text-sm p-4 text-center">Select a layer to transform.</div>;
     }
-    const { width, height, x, y, rotation, isAspectRatioLocked, onPropChange, onLockToggle } = transformProps;
+    const { layer, onPropChange, onCommit } = transformProps;
+    
+    const displayedWidth = Math.abs(layer.width * layer.scaleX);
+    const displayedHeight = Math.abs(layer.height * layer.scaleY);
+    const aspectRatio = (layer.width && layer.height) ? layer.width / layer.height : 1;
+
+    const handleNumericChange = (prop: 'width' | 'height' | 'x' | 'y' | 'rotation', valueStr: string) => {
+        const value = parseFloat(valueStr) || 0;
+        
+        if (prop === 'width') {
+            const newScaleX = value / layer.width;
+            onPropChange('scaleX', newScaleX);
+            if (isAspectRatioLocked) onPropChange('scaleY', newScaleX / aspectRatio * Math.sign(layer.scaleY));
+        } else if (prop === 'height') {
+            const newScaleY = value / layer.height;
+            onPropChange('scaleY', newScaleY);
+            if (isAspectRatioLocked) onPropChange('scaleX', newScaleY * aspectRatio * Math.sign(layer.scaleX));
+        } else {
+            onPropChange(prop, value);
+        }
+    };
+
+    const handleCommit = (prop: Parameters<typeof handleNumericChange>[0], value: string) => {
+        // We only commit x, y, rotation from here for now. Scale is committed via controls.
+        onCommit(prop, parseFloat(value) || 0);
+    };
 
     return (
         <div className="space-y-3">
-             <div className="flex items-center space-x-1 bg-[#1E1E1E] p-1 rounded-lg">
-                <button className="flex-1 p-1.5 rounded-md flex items-center justify-center space-x-1 text-sm bg-[#363636]"><Icon type="transform" /><span>Freeform</span></button>
-                <button className="flex-1 p-1.5 rounded-md flex items-center justify-center space-x-1 text-sm hover:bg-[#363636]" disabled><Icon type="selection" /><span>Warp</span></button>
-             </div>
-
              <div className="flex items-center space-x-2">
-                <Input label="Width" type="number" value={Math.round(width)} onChange={e => onPropChange('width', parseFloat(e.target.value))} />
-                <button onClick={onLockToggle} className="p-2 self-end text-gray-400 hover:text-white transition-colors">
+                <Input label="W" type="number" value={Math.round(displayedWidth)} onChange={e => handleNumericChange('width', e.target.value)} />
+                <button onClick={() => setIsAspectRatioLocked(p => !p)} className="p-2 self-end text-gray-400 hover:text-white transition-colors">
                     <Icon type={isAspectRatioLocked ? 'lock' : 'unlock'} />
                 </button>
-                <Input label="Height" type="number" value={Math.round(height)} onChange={e => onPropChange('height', parseFloat(e.target.value))} />
+                <Input label="H" type="number" value={Math.round(displayedHeight)} onChange={e => handleNumericChange('height', e.target.value)} />
              </div>
              <div className="grid grid-cols-2 gap-x-2">
-                <Input label="X" type="number" value={Math.round(x)} onChange={e => onPropChange('x', parseFloat(e.target.value))} />
-                <Input label="Y" type="number" value={Math.round(y)} onChange={e => onPropChange('y', parseFloat(e.target.value))} />
+                <Input label="X" type="number" value={Math.round(layer.x)} onChange={e => handleNumericChange('x', e.target.value)} onBlur={e => handleCommit('x', e.target.value)} />
+                <Input label="Y" type="number" value={Math.round(layer.y)} onChange={e => handleNumericChange('y', e.target.value)} onBlur={e => handleCommit('y', e.target.value)} />
              </div>
-             <Input label="Rotation" type="number" value={rotation.toFixed(1)} onChange={e => onPropChange('rotation', parseFloat(e.target.value))} />
+             <Input label="Rotation °" type="number" value={layer.rotation.toFixed(1)} onChange={e => handleNumericChange('rotation', e.target.value)} onBlur={e => handleCommit('rotation', e.target.value)} />
         </div>
     )
 };
 
-const CropToolProperties: React.FC = () => {
-    return (
-        <div className="space-y-4">
-            <Select label="Units" options={[{value: 'Pixels', label: 'Pixels'}]} value="Pixels" onChange={() => {}}/>
-            <div className="flex items-center space-x-2">
-                <Input label="Width" type="number" value={1920} />
-                <button className="p-2 self-end text-gray-400 hover:text-white transition-colors">
-                    <Icon type="swap" />
-                </button>
-                <Input label="Height" type="number" value={1080} />
-             </div>
-             <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">Rotate</label>
-                <div className="flex items-center space-x-2">
-                    <input type="range" min="-45" max="45" value="0" className="w-full accent-blue-500" />
-                    <Input type="number" value="0.0" className="w-24"/>
-                </div>
-             </div>
-             <div className="grid grid-cols-2 gap-2">
-                <button className="w-full p-2 text-sm bg-[#363636] rounded-md text-gray-300 hover:bg-gray-700">Straighten</button>
-                <button className="w-full p-2 text-sm bg-[#363636] rounded-md text-gray-300 hover:bg-gray-700">Rotate</button>
-             </div>
-             <button className="w-full flex items-center justify-center p-2 space-x-2 bg-[#363636] rounded-md text-gray-300 hover:bg-gray-700">
-                <Icon type="reset-colors" />
-                <span>Reset</span>
-             </button>
-        </div>
-    )
-}
+const CropToolProperties: React.FC = () => (
+    <div><p className="text-gray-500 text-sm">Crop controls are coming soon.</p></div>
+);
 
 const TransformToolPanel: React.FC<TransformToolPanelProps> = ({ transformProps, activeSubTool, onSubToolChange }) => {
     

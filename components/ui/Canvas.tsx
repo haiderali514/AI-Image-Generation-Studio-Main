@@ -1,6 +1,18 @@
-import React, { useRef, useEffect, useImperativeHandle, useState } from 'react';
-import { EditorTool, BrushShape, TextAlign, PaintSubTool } from '../../types';
 
+import React, { useRef, useEffect, useImperativeHandle, useState, forwardRef } from 'react';
+import { EditorTool, BrushShape, TextAlign, AnySubTool, Layer } from '../../types';
+
+interface MoveSession {
+    layerId: string;
+    startMouseX: number;
+    startMouseY: number;
+    layerStartX: number;
+    layerStartY: number;
+    currentMouseX: number;
+    currentMouseY: number;
+}
+
+// FIX: Export CanvasHandle type for use in parent components via refs.
 export interface CanvasHandle {
   getCanvas: () => HTMLCanvasElement | null;
 }
@@ -17,16 +29,23 @@ interface CanvasProps {
   fontFamily: string;
   textAlign: TextAlign;
   activeTool: EditorTool;
-  activePaintSubTool: PaintSubTool;
+  activeSubTool: AnySubTool;
   isLocked: boolean;
   isBackground?: boolean;
   onAttemptEditBackgroundLayer?: () => void;
   selectionRect: { x: number, y: number, width: number, height: number } | null;
   onSelectionChange: (rect: { x: number, y: number, width: number, height: number } | null) => void;
   onSelectionPreview: (rect: { x: number, y: number, width: number, height: number } | null) => void;
-  imageDataToRender: ImageData | null;
   onDrawEnd: (imageData: ImageData) => void;
   zoom?: number;
+  layers: Layer[];
+  onSelectLayer: (id: string) => void;
+  moveSession: MoveSession | null;
+  onMoveStart: (layerId: string, mouseX: number, mouseY: number) => void;
+  onMoveUpdate: (mouseX: number, mouseY: number) => void;
+  onMoveCommit: (finalMouseX: number, finalMouseY: number) => void;
+  isSpacebarDown: boolean;
+  imageDataToRender?: ImageData | null;
 }
 
 const hexToRgb = (hex: string) => {
@@ -44,17 +63,20 @@ const hexToRgb = (hex: string) => {
 };
 
 
-const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
-  (props, ref) => {
+// FIX: Wrap Canvas in forwardRef to allow parent components to get a ref to it.
+const Canvas = forwardRef<CanvasHandle, CanvasProps>((props, ref) => {
     const { 
         width, height, foregroundColor, brushSize, brushOpacity, brushHardness, 
-        brushShape, fontSize, fontFamily, textAlign, activeTool, activePaintSubTool, isLocked, isBackground,
+        brushShape, fontSize, fontFamily, textAlign, activeTool, activeSubTool, isLocked, isBackground,
         onAttemptEditBackgroundLayer, selectionRect, onSelectionChange, onSelectionPreview, 
-        imageDataToRender, onDrawEnd, zoom = 1 
+        onDrawEnd, zoom = 1, layers, onSelectLayer,
+        moveSession, onMoveStart, onMoveUpdate, onMoveCommit, isSpacebarDown,
+        imageDataToRender
     } = props;
     
     const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
     const interactionCanvasRef = useRef<HTMLCanvasElement>(null);
+    const hitTestCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
     const isDrawing = useRef(false);
     const lastPos = useRef<{ x: number, y: number } | null>(null);
@@ -62,18 +84,31 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
 
     const [textEdit, setTextEdit] = useState<{ x: number, y: number, value: string } | null>(null);
 
-    const getDrawingCtx = () => drawingCanvasRef.current?.getContext('2d', { willReadFrequently: true });
-    const getInteractionCtx = () => interactionCanvasRef.current?.getContext('2d');
-
+    // FIX: Expose getCanvas method via useImperativeHandle.
     useImperativeHandle(ref, () => ({
-      getCanvas: () => drawingCanvasRef.current,
+        getCanvas: () => drawingCanvasRef.current,
     }));
+
+    // FIX: Add useEffect to draw imageDataToRender when it changes (for history/undo).
+    useEffect(() => {
+        const ctx = drawingCanvasRef.current?.getContext('2d');
+        const canvas = drawingCanvasRef.current;
+        if (ctx && canvas) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (imageDataToRender) {
+                ctx.putImageData(imageDataToRender, 0, 0);
+            }
+        }
+    }, [imageDataToRender, width, height]);
+
+    const getDrawingCtx = () => drawingCanvasRef.current?.getContext('2d', { willReadFrequently: true });
     
     const handleDrawEnd = () => {
         const ctx = getDrawingCtx();
         const canvas = drawingCanvasRef.current;
         if (!ctx || !canvas) return;
         onDrawEnd(ctx.getImageData(0, 0, canvas.width, canvas.height));
+        ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear drawing canvas after committing
     }
 
     const finalizeTextInput = () => {
@@ -103,47 +138,7 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
         }
         setTextEdit(null);
     };
-
-    const floodFill = (startX: number, startY: number) => {
-        const ctx = getDrawingCtx();
-        if (!ctx) return;
-
-        const imageData = ctx.getImageData(0, 0, width, height);
-        const data = imageData.data;
-        const startPos = (startY * width + startX) * 4;
-        const startColor = [data[startPos], data[startPos + 1], data[startPos + 2], data[startPos + 3]];
-        const { r: fillR, g: fillG, b: fillB } = hexToRgb(foregroundColor);
-
-        if (startColor[0] === fillR && startColor[1] === fillG && startColor[2] === fillB && startColor[3] === 255) return;
-
-        const pixelStack = [[startX, startY]];
-        while (pixelStack.length > 0) {
-            const [x, y] = pixelStack.pop()!;
-            
-            if (x < 0 || x >= width || y < 0 || y >= height) continue;
-            
-            if (selectionRect) {
-                if (x < selectionRect.x || x >= selectionRect.x + selectionRect.width || y < selectionRect.y || y >= selectionRect.y + selectionRect.height) {
-                    continue;
-                }
-            }
-            
-            const currentPos = (y * width + x) * 4;
-
-            if (data[currentPos] !== startColor[0] || data[currentPos + 1] !== startColor[1] || data[currentPos + 2] !== startColor[2] || data[currentPos + 3] !== startColor[3]) continue;
-
-            data[currentPos] = fillR;
-            data[currentPos + 1] = fillG;
-            data[currentPos + 2] = fillB;
-            data[currentPos + 3] = 255;
-
-            pixelStack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
-        }
-        ctx.putImageData(imageData, 0, 0);
-        handleDrawEnd();
-    };
     
-    // Brush stamping function with hardness
     const stamp = (ctx: CanvasRenderingContext2D, x: number, y: number) => {
       const radgrad = ctx.createRadialGradient(x, y, 0, x, y, brushSize / 2);
       const { r, g, b } = hexToRgb(foregroundColor);
@@ -164,28 +159,74 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
           ctx.fill();
       }
     };
+    
+    const hitTest = (x: number, y: number): Layer | null => {
+        if (!hitTestCanvasRef.current) {
+            hitTestCanvasRef.current = document.createElement('canvas');
+        }
+        const hitCanvas = hitTestCanvasRef.current;
+        const ctx = hitCanvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) return null;
+        
+        // Iterate from top layer to bottom
+        for (let i = layers.length - 1; i >= 0; i--) {
+            const layer = layers[i];
+            if (!layer.isVisible || !layer.imageData) continue;
+
+            hitCanvas.width = layer.width;
+            hitCanvas.height = layer.height;
+            ctx.putImageData(layer.imageData, 0, 0);
+
+            const matrix = new DOMMatrix()
+                .translate(layer.x, layer.y)
+                .rotate(layer.rotation)
+                .scale(layer.scaleX, layer.scaleY)
+                .translate(-layer.width / 2, -layer.height / 2);
+            
+            const inverseMatrix = matrix.inverse();
+            const localPoint = new DOMPoint(x, y).matrixTransform(inverseMatrix);
+
+            if (localPoint.x >= 0 && localPoint.x < layer.width && localPoint.y >= 0 && localPoint.y < layer.height) {
+                const pixel = ctx.getImageData(localPoint.x, localPoint.y, 1, 1).data;
+                if (pixel[3] > 0) {
+                    return layer;
+                }
+            }
+        }
+        return null;
+    }
+
 
     const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+        if (isSpacebarDown || (activeTool === EditorTool.TRANSFORM && activeSubTool === 'transform')) return;
+
         const isDrawingTool = [EditorTool.PAINT, EditorTool.TYPE, EditorTool.SHAPES, EditorTool.SELECT].includes(activeTool);
         
         if (isBackground && isDrawingTool) {
             onAttemptEditBackgroundLayer?.();
             return;
         }
-
         if (isLocked) return;
 
         finalizeTextInput();
-        const canvas = drawingCanvasRef.current;
+        const canvas = interactionCanvasRef.current;
         if (!canvas) return;
         const rect = canvas.getBoundingClientRect();
         const x = (e.clientX - rect.left) / zoom;
         const y = (e.clientY - rect.top) / zoom;
         
+        if (activeTool === EditorTool.TRANSFORM && activeSubTool === 'move') {
+            const targetLayer = hitTest(x, y);
+            if (targetLayer) {
+                onMoveStart(targetLayer.id, e.clientX, e.clientY);
+            }
+            return;
+        }
+
         if (selectionRect && isDrawingTool) {
             const { x: sx, y: sy, width: sw, height: sh } = selectionRect;
             if (x < sx || x >= sx + sw || y < sy || y >= sy + sh) {
-                return; // Click is outside selection, do nothing for drawing tools
+                return;
             }
         }
 
@@ -195,13 +236,13 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
                 lastPos.current = { x, y };
                 const drawCtx = getDrawingCtx();
                 if (drawCtx) {
-                    drawCtx.save(); // Save context state before clipping
+                    drawCtx.save();
                     if (selectionRect) {
                         drawCtx.beginPath();
                         drawCtx.rect(selectionRect.x, selectionRect.y, selectionRect.width, selectionRect.height);
                         drawCtx.clip();
                     }
-                    drawCtx.globalCompositeOperation = activePaintSubTool === 'eraser' ? 'destination-out' : 'source-over';
+                    drawCtx.globalCompositeOperation = activeSubTool === 'eraser' ? 'destination-out' : 'source-over';
                     stamp(drawCtx, x, y);
                 }
                 break;
@@ -217,32 +258,33 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
     };
 
     const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+        if (isSpacebarDown) return;
+        if (moveSession) {
+            onMoveUpdate(e.clientX, e.clientY);
+            return;
+        }
         if (isLocked) return;
+        if (!isDrawing.current) return;
+        
         const canvas = drawingCanvasRef.current;
         if (!canvas) return;
         const rect = canvas.getBoundingClientRect();
         const x = (e.clientX - rect.left) / zoom;
         const y = (e.clientY - rect.top) / zoom;
         
-        if (!isDrawing.current) return;
-        
         const drawCtx = getDrawingCtx();
-        const interactCtx = getInteractionCtx();
 
         switch (activeTool) {
             case EditorTool.PAINT:
                 if (!drawCtx || !lastPos.current) return;
-                
                 const dist = Math.hypot(x - lastPos.current.x, y - lastPos.current.y);
                 const angle = Math.atan2(y - lastPos.current.y, x - lastPos.current.x);
-                
-                // Interpolate for a smooth stroke
                 for (let i = 0; i < dist; i += Math.max(1, brushSize / 20)) {
                     const currentX = lastPos.current.x + Math.cos(angle) * i;
                     const currentY = lastPos.current.y + Math.sin(angle) * i;
                     stamp(drawCtx, currentX, currentY);
                 }
-                stamp(drawCtx, x, y); // Ensure the end point is stamped
+                stamp(drawCtx, x, y);
                 lastPos.current = { x, y };
                 break;
             case EditorTool.SELECT:
@@ -257,20 +299,17 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
                 }
                 break;
             case EditorTool.SHAPES:
-                if (interactCtx && shapeStartPos.current) {
-                    interactCtx.clearRect(0, 0, width, height);
-                    interactCtx.strokeStyle = foregroundColor;
-                    interactCtx.lineWidth = 2; // Fixed for shapes for now
-                    interactCtx.strokeRect(shapeStartPos.current.x, shapeStartPos.current.y, x - shapeStartPos.current.x, y - shapeStartPos.current.y);
-                }
+                // Shape preview logic would go here, likely on a separate interaction canvas
                 break;
         }
     };
 
     const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
-        if (isLocked) return;
-        
-        if (!isDrawing.current) return;
+        if (moveSession) {
+            onMoveCommit(e.clientX, e.clientY);
+            return;
+        }
+        if (isLocked || !isDrawing.current) return;
 
         const drawCtx = getDrawingCtx();
         isDrawing.current = false;
@@ -286,23 +325,18 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
                         const rect = drawingCanvasRef.current!.getBoundingClientRect();
                         const x = (e.clientX - rect.left) / zoom;
                         const y = (e.clientY - rect.top) / zoom;
-                        
                         if (selectionRect) {
                             drawCtx.save();
                             drawCtx.beginPath();
                             drawCtx.rect(selectionRect.x, selectionRect.y, selectionRect.width, selectionRect.height);
                             drawCtx.clip();
                         }
-                        
                         drawCtx.strokeStyle = foregroundColor;
                         drawCtx.lineWidth = 2;
                         drawCtx.strokeRect(shapeStartPos.current.x, shapeStartPos.current.y, x - shapeStartPos.current.x, y - shapeStartPos.current.y);
-                        
                         if (selectionRect) {
                             drawCtx.restore();
                         }
-
-                        getInteractionCtx()?.clearRect(0, 0, width, height);
                         handleDrawEnd();
                     }
                     break;
@@ -333,44 +367,36 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
     };
 
     useEffect(() => {
-      const canvas = drawingCanvasRef.current;
+      const canvas = interactionCanvasRef.current;
       if (!canvas) return;
-
+      
+      if (isSpacebarDown) {
+        canvas.style.cursor = ''; return;
+      }
       if (isLocked) {
-        canvas.style.cursor = 'not-allowed';
-        return;
+        canvas.style.cursor = 'not-allowed'; return;
       }
 
       switch (activeTool) {
-          // FIX: The `EditorTool` enum does not have a `MOVE` member. It should be `TRANSFORM`.
           case EditorTool.TRANSFORM:
-              canvas.style.cursor = 'move';
+              if (activeSubTool === 'move') {
+                  const moveCursorSVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill="black" xmlns="http://www.w3.org/2000/svg"><path d="M19.7529 12.2852L4.25293 2.28516L11.0029 18.2852L12.4249 13.1162L19.7529 12.2852Z"/></svg>`;
+                  canvas.style.cursor = `url('data:image/svg+xml;utf8,${encodeURIComponent(moveCursorSVG)}') 4 2, auto`;
+              } else {
+                  canvas.style.cursor = 'default';
+              }
               break;
           case EditorTool.SELECT:
           case EditorTool.SHAPES:
-              canvas.style.cursor = 'crosshair';
-              break;
+              canvas.style.cursor = 'crosshair'; break;
           case EditorTool.TYPE:
-              canvas.style.cursor = 'text';
-              break;
+              canvas.style.cursor = 'text'; break;
           case EditorTool.PAINT:
-              canvas.style.cursor = 'none'; // Use custom cursor from CanvasArea
-              break;
+              canvas.style.cursor = 'none'; break;
           default:
               canvas.style.cursor = 'default';
       }
-    }, [activeTool, isLocked]);
-
-    useEffect(() => {
-        const ctx = getDrawingCtx();
-        if (!ctx) return;
-        if (imageDataToRender) {
-            ctx.putImageData(imageDataToRender, 0, 0);
-        } else {
-            ctx.clearRect(0, 0, width, height);
-        }
-    }, [imageDataToRender, width, height]);
-
+    }, [activeTool, activeSubTool, isLocked, isSpacebarDown]);
 
     return (
       <div style={{ width, height }} className="absolute top-0 left-0">
@@ -378,17 +404,19 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
             ref={drawingCanvasRef}
             width={width}
             height={height}
-            className="absolute top-0 left-0"
+            className="absolute top-0 left-0 pointer-events-none"
+        />
+        <div
+            ref={interactionCanvasRef}
+            style={{ width, height }}
+            className="absolute top-0 left-0 pointer-events-auto"
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
-            onMouseLeave={(e) => { if(isDrawing.current) handleMouseUp(e);}}
-        />
-        <canvas
-            ref={interactionCanvasRef}
-            width={width}
-            height={height}
-            className="absolute top-0 left-0 pointer-events-none"
+            onMouseLeave={(e) => { 
+                if (moveSession) onMoveCommit(e.clientX, e.clientY)
+                if(isDrawing.current) handleMouseUp(e as any);
+            }}
         />
         {textEdit && (
             <input
@@ -411,15 +439,13 @@ const Canvas = React.forwardRef<CanvasHandle, CanvasProps>(
                     outline: 'none',
                     lineHeight: 1,
                     padding: 0,
+                    pointerEvents: 'auto'
                 }}
                 autoFocus
             />
         )}
       </div>
     );
-  }
-);
-
-Canvas.displayName = 'Canvas';
+});
 
 export default Canvas;

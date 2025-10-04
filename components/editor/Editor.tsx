@@ -1,7 +1,6 @@
 
-
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { DocumentSettings, EditorTool, Layer, TransformSubTool, BrushShape, PaintSubTool, AnySubTool } from '../../types';
+import { DocumentSettings, EditorTool, Layer, TransformSubTool, BrushShape, PaintSubTool, AnySubTool, TransformSession } from '../../types';
 import EditorHeader from './EditorHeader';
 import CanvasArea from './CanvasArea';
 import Toolbar from './Toolbar';
@@ -19,29 +18,25 @@ interface EditorProps {
   initialFile?: File | null;
 }
 
-interface TransformSession {
-    layerId: string;
-    initialLayerState: Layer;
-    transform: DOMMatrix;
-    isAspectRatioLocked: boolean;
-}
-
 interface MoveSession {
     layerId: string;
     startMouseX: number;
     startMouseY: number;
     layerStartX: number;
     layerStartY: number;
+    currentMouseX: number;
+    currentMouseY: number;
 }
 
-const MAX_ZOOM = 32; // 3200%
-const MIN_ZOOM = 0.05; // 5%
+const MAX_ZOOM = 5; // 500%
+const MIN_ZOOM = 0.01; // 1%
 
 const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onClose, onNew, initialFile }) => {
   const [docSettings, setDocSettings] = useState(initialDocumentSettings);
   const [activeTool, setActiveTool] = useState<EditorTool>(EditorTool.TRANSFORM);
   const [activeSubTool, setActiveSubTool] = useState<AnySubTool>('move');
   const [zoom, setZoom] = useState(1);
+  const [viewResetKey, setViewResetKey] = useState(0);
   const [selection, setSelection] = useState<{ rect: { x: number; y: number; width: number; height: number; } } | null>(null);
   const [selectionPreview, setSelectionPreview] = useState<{ rect: { x: number; y: number; width: number; height: number; } } | null>(null);
   const [isPropertiesPanelOpen, setIsPropertiesPanelOpen] = useState(true);
@@ -105,8 +100,13 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
             blendMode: 'normal',
             imageData: initialImageData,
             thumbnail: generateThumbnail(initialImageData, 48, 40),
-            x: 0,
-            y: 0,
+            x: initialDocumentSettings.width / 2,
+            y: initialDocumentSettings.height / 2,
+            width: initialDocumentSettings.width,
+            height: initialDocumentSettings.height,
+            rotation: 0,
+            scaleX: 1,
+            scaleY: 1,
         };
         
         let initialLayers = [backgroundLayer];
@@ -124,8 +124,13 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
                 opacity: 1,
                 blendMode: 'normal',
                 thumbnail: generateThumbnail(imageData, 48, 40),
-                x: 0,
-                y: 0,
+                x: initialDocumentSettings.width / 2,
+                y: initialDocumentSettings.height / 2,
+                width: initialDocumentSettings.width,
+                height: initialDocumentSettings.height,
+                rotation: 0,
+                scaleX: 1,
+                scaleY: 1,
             };
             initialLayers.push(imageLayer);
             initialActiveId = imageLayer.id;
@@ -139,28 +144,6 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
   }, [initialDocumentSettings, initialFile]);
 
   
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
-
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
-        e.preventDefault();
-        if (selection) setSelection(null);
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        handleUndo();
-      }
-       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        handleRedo();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selection]);
-
   const handleZoom = (update: number | 'in' | 'out' | 'reset') => {
     setZoom(prev => {
         let newZoom = prev;
@@ -172,31 +155,45 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
     });
   };
 
+  const handleResetView = () => {
+    setZoom(1);
+    setViewResetKey(k => k + 1);
+  };
+
   const handleDrawEnd = (strokesImageData: ImageData) => {
     if (!activeLayerId) return;
     
     const activeLayer = currentLayers.find(l => l.id === activeLayerId);
-    if (!activeLayer) return;
+    if (!activeLayer || activeLayer.isLocked || activeLayer.isBackground) return;
 
-    // This creates a new canvas that contains the layer's existing image data
-    // plus the new stroke drawn by the user.
     const canvas = document.createElement('canvas');
-    canvas.width = docSettings.width;
-    canvas.height = docSettings.height;
+    canvas.width = activeLayer.width;
+    canvas.height = activeLayer.height;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
     
-    // 1. Draw the original layer content
+    // 1. Draw the original layer content (untransformed)
     if (activeLayer.imageData) {
         ctx.putImageData(activeLayer.imageData, 0, 0);
     }
     
-    // 2. Draw the new stroke on top, using the correct composite operation (for eraser)
+    // 2. Draw the new stroke on top
+    const strokeCanvas = document.createElement('canvas');
+    strokeCanvas.width = docSettings.width;
+    strokeCanvas.height = docSettings.height;
+    strokeCanvas.getContext('2d')?.putImageData(strokesImageData, 0, 0);
+    
+    // We need to draw the stroke in the layer's local coordinate space
+    ctx.save();
     ctx.globalCompositeOperation = activeSubTool === 'eraser' ? 'destination-out' : 'source-over';
-    ctx.drawImage(strokesImageData.canvas, 0, 0);
+    // Apply inverse transform to the stroke canvas before drawing it onto the layer's canvas
+    const tx = activeLayer.x - activeLayer.width / 2;
+    const ty = activeLayer.y - activeLayer.height / 2;
+    ctx.translate(-tx, -ty);
+    ctx.drawImage(strokeCanvas, 0, 0);
+    ctx.restore();
 
-    // 3. Get the merged result
-    const newImageData = ctx.getImageData(0, 0, docSettings.width, docSettings.height);
+    const newImageData = ctx.getImageData(0, 0, activeLayer.width, activeLayer.height);
 
     const newLayers = currentLayers.map(layer => {
         if (layer.id === activeLayerId) {
@@ -207,12 +204,13 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
     commit(newLayers);
   };
 
-  const handleUndo = () => {
+  const handleUndo = useCallback(() => {
     if (historyIndex > 0) setHistoryIndex(historyIndex - 1);
-  };
-  const handleRedo = () => {
-    if (historyIndex < history.length - 1) setHistoryIndex(historyIndex - 1);
-  };
+  }, [historyIndex]);
+
+  const handleRedo = useCallback(() => {
+    if (historyIndex < history.length - 1) setHistoryIndex(historyIndex + 1);
+  }, [historyIndex, history.length]);
   
   const handleAddLayer = () => {
     const newLayer: Layer = {
@@ -220,8 +218,13 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
         name: `Layer ${currentLayers.length}`,
         isVisible: true, isLocked: false, opacity: 1, blendMode: 'normal',
         imageData: null, thumbnail: generateThumbnail(null, 48, 40),
-        x: 0,
-        y: 0,
+        x: docSettings.width / 2,
+        y: docSettings.height / 2,
+        width: docSettings.width,
+        height: docSettings.height,
+        rotation: 0,
+        scaleX: 1,
+        scaleY: 1,
     };
     
     const activeIndex = activeLayerId ? currentLayers.findIndex(l => l.id === activeLayerId) : -1;
@@ -241,14 +244,18 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
     commit(newLayers, newActiveId ?? undefined);
   };
   
-  const handleUpdateLayerProps = (id: string, props: Partial<Layer>) => {
+  const handleUpdateLayerProps = (id: string, props: Partial<Omit<Layer, 'imageData'>>) => {
     const newLayers = currentLayers.map(l => l.id === id ? { ...l, ...props } : l);
+    // This function is for property changes that should generate a history state
     commit(newLayers);
   };
   
-  const handleUpdateLayerPosition = (id: string, x: number, y: number) => {
-    const newLayers = currentLayers.map(l => l.id === id ? { ...l, x: Math.round(x), y: Math.round(y) } : l);
-    commit(newLayers);
+  const handleUpdateLayerTransform = (id: string, props: Partial<Pick<Layer, 'x' | 'y' | 'rotation' | 'scaleX' | 'scaleY'>>) => {
+    const newLayers = currentLayers.map(l => l.id === id ? { ...l, ...props } : l);
+    // This is for live updates, so it doesn't create a history state
+    const newHistory = [...history];
+    newHistory[historyIndex] = newLayers;
+    setHistory(newHistory);
   };
 
   const handleDuplicateLayer = () => {
@@ -257,6 +264,8 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
         ...activeLayer,
         id: crypto.randomUUID(),
         name: `${activeLayer.name} copy`,
+        x: activeLayer.x + 10,
+        y: activeLayer.y + 10,
     };
     const activeIndex = currentLayers.findIndex(l => l.id === activeLayerId);
     const newLayers = [...currentLayers];
@@ -266,49 +275,61 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
 
   const handleMergeDown = () => {
     const activeIndex = currentLayers.findIndex(l => l.id === activeLayerId);
-    if (activeIndex <= 0) return; // Cannot merge down if it's the bottom layer
+    if (activeIndex <= 0 || currentLayers[activeIndex].isBackground) return; // Cannot merge down if it's the bottom layer or background
+    
     const topLayer = currentLayers[activeIndex];
     const bottomLayer = currentLayers[activeIndex - 1];
+    
+    if (bottomLayer.isBackground) {
+        alert("Cannot merge down onto the Background layer.");
+        return;
+    }
 
     const canvas = document.createElement('canvas');
     canvas.width = docSettings.width;
     canvas.height = docSettings.height;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
+    
+    const renderLayer = (layer: Layer) => {
+        if (!layer.imageData) return;
+        const layerCanvas = document.createElement('canvas');
+        layerCanvas.width = layer.width;
+        layerCanvas.height = layer.height;
+        layerCanvas.getContext('2d')?.putImageData(layer.imageData, 0, 0);
 
-    // Draw bottom layer at its position
-    if (bottomLayer.imageData) {
-        const bottomCanvas = document.createElement('canvas');
-        bottomCanvas.width = docSettings.width;
-        bottomCanvas.height = docSettings.height;
-        bottomCanvas.getContext('2d')?.putImageData(bottomLayer.imageData, 0, 0);
-        ctx.drawImage(bottomCanvas, bottomLayer.x, bottomLayer.y);
-    }
+        ctx.save();
+        ctx.globalAlpha = layer.opacity;
+        ctx.globalCompositeOperation = layer.blendMode === 'normal' ? 'source-over' : layer.blendMode;
+        ctx.translate(layer.x, layer.y);
+        ctx.rotate(layer.rotation * Math.PI / 180);
+        ctx.scale(layer.scaleX, layer.scaleY);
+        ctx.drawImage(layerCanvas, -layer.width / 2, -layer.height / 2);
+        ctx.restore();
+    };
 
-    // Draw top layer at its position
-    if (topLayer.imageData) {
-        ctx.globalAlpha = topLayer.opacity;
-        ctx.globalCompositeOperation = topLayer.blendMode === 'normal' ? 'source-over' : topLayer.blendMode;
-        
-        const topCanvas = document.createElement('canvas');
-        topCanvas.width = docSettings.width;
-        topCanvas.height = docSettings.height;
-        topCanvas.getContext('2d')?.putImageData(topLayer.imageData, 0, 0);
-        ctx.drawImage(topCanvas, topLayer.x, topLayer.y);
-    }
+    renderLayer(bottomLayer);
+    renderLayer(topLayer);
     
     const mergedImageData = ctx.getImageData(0, 0, docSettings.width, docSettings.height);
 
-    // The new merged layer will have the position of the bottom layer
     const mergedLayer: Layer = {
         ...bottomLayer,
+        name: `Merged ${topLayer.name}, ${bottomLayer.name}`,
         imageData: mergedImageData,
         thumbnail: generateThumbnail(mergedImageData, 48, 40),
+        width: docSettings.width,
+        height: docSettings.height,
+        x: docSettings.width / 2,
+        y: docSettings.height / 2,
+        rotation: 0,
+        scaleX: 1,
+        scaleY: 1,
     };
 
-    const newLayers = currentLayers.filter(l => l.id !== topLayer.id);
-    const finalLayers = newLayers.map(l => l.id === bottomLayer.id ? mergedLayer : l);
-    commit(finalLayers, bottomLayer.id);
+    const newLayers = currentLayers.filter(l => l.id !== topLayer.id && l.id !== bottomLayer.id);
+    newLayers.splice(activeIndex - 1, 0, mergedLayer);
+    commit(newLayers, mergedLayer.id);
   };
 
   const handleSelectionChange = (rect: {x:number, y:number, width:number, height:number} | null) => {
@@ -319,78 +340,40 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
   const handleSelectionPreview = (rect: {x:number, y:number, width:number, height:number} | null) => {
     setSelectionPreview(rect ? { rect } : null);
   };
-
-  const handleToolSelect = (tool: EditorTool) => {
-    setSelectionPreview(null);
-    
-    // Set default subtool for the selected tool
-    switch (tool) {
-        case EditorTool.TRANSFORM:
-            setActiveSubTool('move');
-            break;
-        case EditorTool.PAINT:
-            setActiveSubTool('brush');
-            break;
-        case EditorTool.SELECT:
-             setActiveSubTool('rectangle');
-            break;
-        // Add other defaults as needed
-        default:
-            // setActiveSubTool(null); // Or keep the last one?
-            break;
-    }
-
-    if (tool === activeTool) {
-        setIsPropertiesPanelOpen(prev => !prev);
-    } else { 
-        setActiveTool(tool); 
-        setIsPropertiesPanelOpen(true); 
-    }
-  };
   
-  const handleImageAdded = (imageUrl: string) => {
+  const handleImageAdded = async (imageUrl: string) => {
     const img = new Image();
-    img.crossOrigin = 'anonymous'; // For loading external stock images
-    img.onload = () => {
+    img.crossOrigin = 'anonymous';
+    img.onload = async () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, img.width, img.height);
+        
         const newLayer: Layer = {
             id: crypto.randomUUID(),
             name: 'Image',
-            isVisible: true,
-            isLocked: false,
-            opacity: 1,
-            blendMode: 'normal',
-            imageData: null, // Will be filled
-            x: 0,
-            y: 0,
+            isVisible: true, isLocked: false, opacity: 1, blendMode: 'normal',
+            imageData: imageData,
+            thumbnail: generateThumbnail(imageData, 48, 40),
+            width: img.width,
+            height: img.height,
+            x: docSettings.width / 2,
+            y: docSettings.height / 2,
+            rotation: 0,
+            scaleX: 1,
+            scaleY: 1,
         };
 
-        const canvas = document.createElement('canvas');
-        canvas.width = docSettings.width;
-        canvas.height = docSettings.height;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        if (!ctx) return;
-
-        // Scale and center the image within the document bounds
-        const hRatio = canvas.width / img.width;
-        const vRatio = canvas.height / img.height;
-        const ratio = Math.min(hRatio, vRatio, 1); // Don't scale up, only down
-        const centerShift_x = (canvas.width - img.width * ratio) / 2;
-        const centerShift_y = (canvas.height - img.height * ratio) / 2;
-        
-        ctx.drawImage(img, 0, 0, img.width, img.height, centerShift_x, centerShift_y, img.width * ratio, img.height * ratio);
-
-        newLayer.imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        newLayer.thumbnail = generateThumbnail(newLayer.imageData, 48, 40);
-
-        // Insert new layer above the active one
         const activeIndex = activeLayerId ? currentLayers.findIndex(l => l.id === activeLayerId) : currentLayers.length - 1;
         const newLayers = [...currentLayers];
         newLayers.splice(activeIndex + 1, 0, newLayer);
         commit(newLayers, newLayer.id);
     };
-    img.onerror = () => {
-        alert('Could not load the selected image. It may be due to CORS policy if it\'s a web image.');
-    };
+    img.onerror = () => alert('Could not load the selected image.');
     img.src = imageUrl;
   };
 
@@ -409,74 +392,75 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
   };
   
   // --- TRANSFORM TOOL LOGIC ---
-  const handleTransformStart = (layerId: string) => {
-    const layerToTransform = currentLayers.find(l => l.id === layerId);
-    if (layerToTransform) {
-        setTransformSession({
-            layerId: layerId,
-            initialLayerState: layerToTransform,
-            transform: new DOMMatrix(),
-            isAspectRatioLocked: false,
-        });
-    }
+  const handleTransformStart = (layer: Layer, handle: string, e: React.MouseEvent) => {
+    setActiveLayerId(layer.id);
+    setTransformSession({
+        layer: layer,
+        handle: handle,
+        isAspectRatioLocked: e.shiftKey,
+        originalLayer: layer,
+        startMouse: { x: e.clientX, y: e.clientY },
+    });
   };
-  const handleTransformUpdate = (newTransform: DOMMatrix) => {
+
+  const handleTransformUpdate = (newLayer: Layer) => {
     if (transformSession) {
-        setTransformSession(prev => prev ? { ...prev, transform: newTransform } : null);
+      setTransformSession(prev => prev ? { ...prev, layer: newLayer } : null);
     }
   };
-  const handleTransformCommit = () => {
+
+  const handleTransformCommit = useCallback(() => {
     if (!transformSession) return;
-    const { initialLayerState, transform } = transformSession;
-
-    const sourceCanvas = document.createElement('canvas');
-    sourceCanvas.width = docSettings.width;
-    sourceCanvas.height = docSettings.height;
-    const sourceCtx = sourceCanvas.getContext('2d');
-    if (!sourceCtx || !initialLayerState.imageData) {
-        setTransformSession(null);
-        return;
-    }
-    sourceCtx.putImageData(initialLayerState.imageData, 0, 0);
-
-    const destCanvas = document.createElement('canvas');
-    destCanvas.width = docSettings.width;
-    destCanvas.height = docSettings.height;
-    const destCtx = destCanvas.getContext('2d', { willReadFrequently: true });
-    if (!destCtx) {
-         setTransformSession(null);
-        return;
-    }
-    
-    // The transform matrix is relative to the layer's top-left corner.
-    // We need to translate the context so the transform happens around the layer's center.
-    const centerX = initialLayerState.x + docSettings.width / 2;
-    const centerY = initialLayerState.y + docSettings.height / 2;
-
-    destCtx.translate(centerX, centerY);
-    destCtx.setTransform(transform);
-    destCtx.translate(-centerX, -centerY);
-
-    destCtx.drawImage(sourceCanvas, initialLayerState.x, initialLayerState.y);
-
-    const newImageData = destCtx.getImageData(0, 0, docSettings.width, docSettings.height);
-    
-    const newLayers = currentLayers.map(l => 
-        l.id === initialLayerState.id ? { ...l, imageData: newImageData, thumbnail: generateThumbnail(newImageData, 48, 40) } : l
-    );
-
-    commit(newLayers);
+    const { layer } = transformSession;
+    const newLayers = currentLayers.map(l => l.id === layer.id ? layer : l);
+    commit(newLayers, layer.id);
     setTransformSession(null);
-  };
-  const handleTransformCancel = () => {
-    setTransformSession(null);
-  };
+  }, [transformSession, currentLayers, commit]);
+
+  const handleTransformCancel = useCallback(() => {
+    if (transformSession) {
+        setTransformSession(null); // Just discard changes
+    }
+  }, [transformSession]);
+  
+  // FIX: This useEffect was moved after its dependencies were declared to fix "used before declaration" errors.
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+
+      if (e.key === 'Enter' && activeTool === EditorTool.TRANSFORM && activeSubTool === 'transform') {
+        e.preventDefault();
+        handleTransformCommit();
+      }
+      if (e.key === 'Escape' && activeTool === EditorTool.TRANSFORM && activeSubTool === 'transform') {
+        e.preventDefault();
+        handleTransformCancel();
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        if (selection) setSelection(null);
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        handleUndo();
+      }
+       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selection, activeTool, activeSubTool, handleTransformCommit, handleTransformCancel, handleUndo, handleRedo]);
+
   // --- END TRANSFORM TOOL LOGIC ---
 
   // --- MOVE TOOL LOGIC ---
   const handleMoveStart = (layerId: string, mouseX: number, mouseY: number) => {
     const layer = currentLayers.find(l => l.id === layerId);
-    if (!layer) return;
+    if (!layer || layer.isLocked || layer.isBackground) return;
     setActiveLayerId(layerId);
     setMoveSession({
         layerId,
@@ -484,7 +468,15 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
         startMouseY: mouseY,
         layerStartX: layer.x,
         layerStartY: layer.y,
+        currentMouseX: mouseX,
+        currentMouseY: mouseY,
     });
+  };
+
+  const handleMoveUpdate = (mouseX: number, mouseY: number) => {
+      if (moveSession) {
+          setMoveSession(prev => prev ? { ...prev, currentMouseX: mouseX, currentMouseY: mouseY } : null);
+      }
   };
 
   const handleMoveCommit = (finalMouseX: number, finalMouseY: number) => {
@@ -494,11 +486,31 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
     const newX = moveSession.layerStartX + deltaX;
     const newY = moveSession.layerStartY + deltaY;
 
-    handleUpdateLayerPosition(moveSession.layerId, newX, newY);
+    if (Math.round(newX) !== moveSession.layerStartX || Math.round(newY) !== moveSession.layerStartY) {
+        handleUpdateLayerProps(moveSession.layerId, { x: newX, y: newY });
+    }
     setMoveSession(null);
   };
   // --- END MOVE TOOL LOGIC ---
 
+  const handleToolSelect = (tool: EditorTool) => {
+    handleTransformCommit(); // Commit any pending transform when switching tools
+    setSelectionPreview(null);
+    
+    switch (tool) {
+        case EditorTool.TRANSFORM: setActiveSubTool('move'); break;
+        case EditorTool.PAINT: setActiveSubTool('brush'); break;
+        case EditorTool.SELECT: setActiveSubTool('rectangle'); break;
+        default: break;
+    }
+
+    if (tool === activeTool) {
+        setIsPropertiesPanelOpen(prev => !prev);
+    } else { 
+        setActiveTool(tool); 
+        setIsPropertiesPanelOpen(true); 
+    }
+  };
 
   const handleExport = (format: ExportFormat, quality?: number) => {
     const compositeCanvas = document.createElement('canvas');
@@ -507,18 +519,24 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
     const ctx = compositeCanvas.getContext('2d');
     if (!ctx) return;
 
-    currentLayers.forEach(layer => {
+    // Render layers in order from bottom to top
+    [...currentLayers].reverse().forEach(layer => {
       if (layer.isVisible && layer.imageData) {
         const layerCanvas = document.createElement('canvas');
-        layerCanvas.width = docSettings.width;
-        layerCanvas.height = docSettings.height;
-        const layerCtx = layerCanvas.getContext('2d');
-        if (layerCtx) {
-          layerCtx.putImageData(layer.imageData, 0, 0);
-          ctx.globalAlpha = layer.opacity;
-          ctx.globalCompositeOperation = layer.blendMode === 'normal' ? 'source-over' : layer.blendMode;
-          ctx.drawImage(layerCanvas, layer.x, layer.y);
-        }
+        layerCanvas.width = layer.width;
+        layerCanvas.height = layer.height;
+        layerCanvas.getContext('2d')?.putImageData(layer.imageData, 0, 0);
+        
+        ctx.save();
+        ctx.globalAlpha = layer.opacity;
+        ctx.globalCompositeOperation = layer.isBackground ? 'source-over' : (layer.blendMode === 'normal' ? 'source-over' : layer.blendMode);
+        
+        ctx.translate(layer.x, layer.y);
+        ctx.rotate(layer.rotation * Math.PI / 180);
+        ctx.scale(layer.scaleX, layer.scaleY);
+
+        ctx.drawImage(layerCanvas, -layer.width / 2, -layer.height / 2);
+        ctx.restore();
       }
     });
     
@@ -541,18 +559,17 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
     if (file) {
         try {
             const { documentSettings: newDoc, layers: newLayers } = await loadProject(file);
-            // Update document settings state and reset history with loaded project
             setDocSettings(newDoc);
             setHistory([newLayers]);
             setHistoryIndex(0);
             setActiveLayerId(newLayers[newLayers.length - 1]?.id ?? null);
-            setZoom(1); // Reset zoom for new project
-            setSelection(null); // Clear selection from old project
+            setZoom(1);
+            setSelection(null);
         } catch (error) {
             alert('Error loading project file. It may be invalid.');
             console.error(error);
         } finally {
-            e.target.value = ''; // Reset file input
+            e.target.value = '';
         }
     }
   };
@@ -560,30 +577,21 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
   const canUndo = historyIndex > 0;
   const canRedo = historyIndex < history.length - 1;
 
-  // --- DERIVED PROPS FOR PANELS ---
-  const transformProps = useMemo(() => {
-    if (!transformSession) return undefined;
+  const transformPropsForPanel = useMemo(() => {
+    const layer = transformSession?.layer ?? activeLayer;
+    if (!layer || layer.isBackground) return undefined;
     
-    // Decompose matrix to get intuitive values
-    const { a, b, c, d, e, f } = transformSession.transform;
-    const rotation = Math.atan2(b, a) * (180 / Math.PI);
-    const scaleX = Math.sqrt(a * a + b * b);
-    const scaleY = Math.sqrt(c * c + d * d) * (a * d - b * c > 0 ? 1 : -1);
-
     return {
-        width: docSettings.width * scaleX,
-        height: docSettings.height * scaleY,
-        x: e,
-        y: f,
-        rotation: rotation,
-        isAspectRatioLocked: transformSession.isAspectRatioLocked,
-        onPropChange: (prop: string, value: number) => console.log(prop, value), // Placeholder
-        onLockToggle: () => setTransformSession(prev => prev ? {...prev, isAspectRatioLocked: !prev.isAspectRatioLocked } : null),
+        layer,
+        onPropChange: (prop: keyof Layer, value: number) => {
+            handleUpdateLayerTransform(layer.id, { [prop]: value });
+        },
+        onCommit: (prop: keyof Layer, value: number) => {
+             handleUpdateLayerProps(layer.id, { [prop]: value });
+        },
     };
-  }, [transformSession, docSettings.width, docSettings.height]);
+  }, [transformSession, activeLayer, handleUpdateLayerTransform, handleUpdateLayerProps]);
   
-  const paintSubTool = activeTool === EditorTool.PAINT ? (activeSubTool as PaintSubTool) : 'brush';
-
   return (
     <div className="flex flex-col h-screen bg-[#181818] text-gray-300 font-sans text-sm">
       <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".aips" className="hidden" />
@@ -592,7 +600,7 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
         onClose={onClose} onNew={onNew} onSaveAs={() => setIsExportModalOpen(true)}
         onSaveProject={handleSaveProject} onOpenProject={handleOpenProjectClick}
         canUndo={canUndo} canRedo={canRedo} onUndo={handleUndo} onRedo={handleRedo}
-        zoom={zoom} onZoomChange={setZoom}
+        zoom={zoom} onZoomChange={setZoom} onResetView={handleResetView}
       />
       <div className="flex flex-1 overflow-hidden">
         <Toolbar
@@ -618,7 +626,7 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
               onClose={() => setIsPropertiesPanelOpen(false)}
               activeSubTool={activeSubTool}
               onSubToolChange={setActiveSubTool}
-              transformProps={transformProps}
+              transformProps={transformPropsForPanel}
               onImageAdded={handleImageAdded}
               brushSettings={brushSettings}
               onBrushSettingsChange={setBrushSettings}
@@ -630,17 +638,61 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
             activeTool={activeTool}
             activeSubTool={activeSubTool}
             zoom={zoom} onZoom={handleZoom}
+            viewResetKey={viewResetKey}
             selection={selection} onSelectionChange={handleSelectionChange}
             selectionPreview={selectionPreview}
             onSelectionPreview={handleSelectionPreview}
             onDrawEnd={handleDrawEnd} onAttemptEditBackgroundLayer={handleAttemptEditBackground}
             onSelectLayer={setActiveLayerId}
-            // Move props
             moveSession={moveSession}
             onMoveStart={handleMoveStart}
+            onMoveUpdate={handleMoveUpdate}
             onMoveCommit={handleMoveCommit}
-            // Transform props
             transformSession={transformSession}
             onTransformStart={handleTransformStart}
             onTransformUpdate={handleTransformUpdate}
-            onTransformCommit={
+            onTransformCommit={handleTransformCommit}
+            onTransformCancel={handleTransformCancel}
+            foregroundColor={foregroundColor}
+            backgroundColor={backgroundColor}
+            brushSize={brushSettings.size}
+            brushOpacity={brushSettings.opacity}
+            brushHardness={brushSettings.hardness}
+            brushShape={brushSettings.shape}
+            fontFamily="sans-serif"
+            fontSize={48}
+            textAlign="left"
+          />
+        </main>
+        <LayersPanel
+            layers={currentLayers}
+            activeLayerId={activeLayerId}
+            onSelectLayer={setActiveLayerId}
+            onAddLayer={handleAddLayer}
+            onDeleteLayer={handleDeleteLayer}
+            onUpdateLayerProps={handleUpdateLayerProps}
+            onDuplicateLayer={handleDuplicateLayer}
+            onMergeDown={handleMergeDown}
+            onConvertBackground={handleAttemptEditBackground}
+        />
+      </div>
+      <ConfirmModal 
+        isOpen={isBgConvertModalOpen}
+        onClose={() => setIsBgConvertModalOpen(false)}
+        onConfirm={handleConfirmConvertToLayer}
+        title="Convert to Layer"
+        confirmText="Convert"
+      >
+        <p>The Background layer is special. You can't move it, hide it, change its stacking order or blending mode. To get full access, you must convert it to a normal layer.</p>
+      </ConfirmModal>
+       <ExportModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        onExport={handleExport}
+        documentName={docSettings.name}
+      />
+    </div>
+  );
+};
+
+export default Editor;

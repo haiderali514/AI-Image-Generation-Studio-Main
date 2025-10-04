@@ -1,8 +1,7 @@
 
-
 import React from 'react';
 
-type IconType = 'text' | 'draw' | 'fill' | 'cut' | 'logo' | 'upload' | 'clear' | 'download' | 'brush-round' | 'brush-square' | 'sparkle' | 'undo' | 'redo' | 'home' | 'files' | 'plus' | 'crop' | 'color-pop' | 'notification' | 'profile' | 'close' | 'search' | 'image' | 'document' | 'orientation-portrait' | 'orientation-landscape' | 'check' | 'chevron-down' | 'save' | 'trash' | 'lock' | 'unlock' | 'edit' | 'zoom-in' | 'zoom-out' | 'eraser' | 'shapes' | 'move' | 'selection' | 'eye' | 'eye-off' | 'plus-square' | 'swap' | 'reset-colors' | 'align-left' | 'align-center' | 'align-right' | 'align-left-2' | 'align-center-horizontal-2' | 'align-right-2' | 'align-top-2' | 'align-center-vertical-2' | 'align-bottom-2' | 'ps-logo' | 'menu' | 'cloud' | 'share' | 'comment' | 'history' | 'add-element' | 'transform' | 'layers' | 'layer-options' | 'info' | 'select-subject' | 'crown' | 'chevron-right' | 'generative' | 'adjust' | 'retouch' | 'quick-actions' | 'effects' | 'paint' | 'type' | 'add-image' | 'select' | 'flip-horizontal' | 'flip-vertical';
+type IconType = 'text' | 'draw' | 'fill' | 'cut' | 'logo' | 'upload' | 'clear' | 'download' | 'brush-round' | 'brush-square' | 'sparkle' | 'undo' | 'redo' | 'home' | 'files' | 'plus' | 'crop' | 'color-pop' | 'notification' | 'profile' | 'close' | 'search' | 'image' | 'document' | 'orientation-portrait' | 'orientation-landscape' | 'check' | 'chevron-down' | 'save' | 'trash' | 'lock' | 'unlock' | 'edit' | 'zoom-in' | 'zoom-out' | 'eraser' | 'shapes' | 'move' | 'selection' | 'eye' | 'eye-off' | 'plus-square' | 'swap' | 'reset-colors' | 'align-left' | 'align-center' | 'align-right' | 'align-left-2' | 'align-center-horizontal-2' | 'align-right-2' | 'align-top-2' | 'align-center-vertical-2' | 'align-bottom-2' | 'ps-logo' | 'menu' | 'cloud' | 'share' | 'comment' | 'history' | 'add-element' | 'transform' | 'layers' | 'layer-options' | 'info' | 'select-subject' | 'crown' | 'chevron-right' | 'generative' | 'adjust' | 'retouch' | 'quick-actions' | 'effects' | 'paint' | 'type' | 'add-image' | 'select' | 'flip-horizontal' | 'flip-vertical' | 'fit-screen';
 
 interface IconProps {
   type: IconType;
@@ -10,6 +9,7 @@ interface IconProps {
 }
 
 const icons: Record<IconType, React.ReactNode> = {
+  'fit-screen': <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 8V4H8M20 4H16V8M4 16V20H8M20 20H16V16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>,
   // New toolbar icons
   'move': <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M19.7529 12.2852L4.25293 2.28516L11.0029 18.2852L12.4249 13.1162L19.7529 12.2852Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>,
   'generative': <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M14.5 9.5L12.5 6L10.5 9.5L8 11.5L10.5 13.5L12.5 16L14.5 13.5L17 11.5L14.5 9.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 18V15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M18 18V15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>,

@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 import Icon from '../ui/Icon';
 import { EditorTool, BrushShape, TextAlign } from '../../types';

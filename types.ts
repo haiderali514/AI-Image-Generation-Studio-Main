@@ -1,5 +1,6 @@
 
 
+
 export enum Tool {
   HOME = 'HOME',
   FILES = 'FILES',
@@ -71,6 +72,8 @@ export type BlendMode = 'normal' | 'multiply' | 'screen' | 'overlay' | 'darken' 
 
 /**
  * Represents a single layer in the editor.
+ * The transformation properties (x, y, rotation, scale) are applied
+ * around the layer's center point.
  */
 export interface Layer {
   id: string;
@@ -82,8 +85,24 @@ export interface Layer {
   blendMode: BlendMode;
   thumbnail?: string;
   imageData: ImageData | null;
-  x: number;
-  y: number;
+  
+  // Transformation properties
+  x: number; // Center X coordinate relative to the document
+  y: number; // Center Y coordinate relative to the document
+  width: number; // The intrinsic width of the imageData
+  height: number; // The intrinsic height of the imageData
+  rotation: number; // In degrees
+  scaleX: number; // Multiplier
+  scaleY: number; // Multiplier
+}
+
+// FIX: Add TransformSession interface for use in Editor and related components.
+export interface TransformSession {
+    layer: Layer;
+    handle: string; // e.g., 'bottom-right', 'rotate'
+    isAspectRatioLocked: boolean;
+    originalLayer: Layer;
+    startMouse: { x: number; y: number };
 }
 
 /**
