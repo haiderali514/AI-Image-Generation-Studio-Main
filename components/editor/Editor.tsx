@@ -441,6 +441,7 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
     if (previousSubTool) {
         setActiveSubTool(previousSubTool);
     }
+    document.body.style.cursor = ''; // FIX: Reset cursor on commit
     setTransformSession(null);
   }, [transformSession, currentLayers, commit]);
 
@@ -454,6 +455,7 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
         if (previousSubTool) {
             setActiveSubTool(previousSubTool);
         }
+        document.body.style.cursor = ''; // FIX: Reset cursor on cancel
         setTransformSession(null);
     }
   }, [transformSession, currentLayers, history, historyIndex]);
