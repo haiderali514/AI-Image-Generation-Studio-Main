@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { DocumentSettings, EditorTool, Layer, TransformSubTool, BrushShape, PaintSubTool } from '../../types';
 import EditorHeader from './EditorHeader';
@@ -162,11 +163,37 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
     });
   };
 
-  const handleDrawEnd = (imageData: ImageData) => {
+  const handleDrawEnd = (strokesImageData: ImageData) => {
     if (!activeLayerId) return;
+    
+    const activeLayer = currentLayers.find(l => l.id === activeLayerId);
+    if (!activeLayer) return;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = docSettings.width;
+    canvas.height = docSettings.height;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return;
+    
+    if (activeLayer.imageData) {
+        ctx.putImageData(activeLayer.imageData, 0, 0);
+    }
+    
+    const strokeCanvas = document.createElement('canvas');
+    strokeCanvas.width = docSettings.width;
+    strokeCanvas.height = docSettings.height;
+    const strokeCtx = strokeCanvas.getContext('2d');
+    if (!strokeCtx) return;
+    strokeCtx.putImageData(strokesImageData, 0, 0);
+
+    ctx.globalCompositeOperation = activePaintSubTool === 'eraser' ? 'destination-out' : 'source-over';
+    ctx.drawImage(strokeCanvas, 0, 0);
+
+    const newImageData = ctx.getImageData(0, 0, docSettings.width, docSettings.height);
+
     const newLayers = currentLayers.map(layer => {
         if (layer.id === activeLayerId) {
-            return { ...layer, imageData, thumbnail: generateThumbnail(imageData, 48, 40) };
+            return { ...layer, imageData: newImageData, thumbnail: generateThumbnail(newImageData, 48, 40) };
         }
         return layer;
     });
@@ -559,7 +586,6 @@ const Editor: React.FC<EditorProps> = ({ document: initialDocumentSettings, onCl
             zoom={zoom} onZoom={handleZoom}
             selection={selection} onSelectionChange={handleSelectionChange}
             selectionPreview={selectionPreview}
-            // FIX: Pass the correct handler function `handleSelectionPreview` instead of the non-existent variable `onSelectionPreview`.
             onSelectionPreview={handleSelectionPreview}
             onDrawEnd={handleDrawEnd} onAttemptEditBackgroundLayer={handleAttemptEditBackground}
             onUpdateLayerPosition={handleUpdateLayerPosition}

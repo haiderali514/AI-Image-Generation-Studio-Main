@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { EditorTool, DocumentSettings, Layer, BrushShape, TextAlign, TransformSubTool } from '../../types';
+import { EditorTool, DocumentSettings, Layer, BrushShape, TextAlign, TransformSubTool, PaintSubTool } from '../../types';
 import Canvas from '../ui/Canvas';
 import TransformControls from './TransformControls';
 import { MoveActionBar, TransformActionBar, CropActionBar, AddImageActionBar } from './FloatingActionBar';
@@ -37,6 +37,7 @@ interface CanvasAreaProps {
   onTransformCommit: () => void;
   onTransformCancel: () => void;
   // Tool props
+  activePaintSubTool: PaintSubTool;
   foregroundColor: string;
   brushSize: number;
   brushOpacity: number;
@@ -54,6 +55,8 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
   const panStart = useRef({ x: 0, y: 0 });
   const isPanning = useRef(false);
   
+  const displayCanvasRef = useRef<HTMLCanvasElement>(null);
+  const interactionCanvasRef = useRef<React.ElementRef<typeof Canvas>>(null);
   const selectionCanvasRef = useRef<HTMLCanvasElement>(null);
   const marchOffset = useRef(0);
   const animationFrameId = useRef<number | undefined>(undefined);
@@ -68,6 +71,46 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
         setPan({ x: initialPanX, y: initialPanY });
     }
   }, [docSettings.width, docSettings.height]); // Only run once on document change
+
+
+  // Main compositing effect
+  useEffect(() => {
+    const canvas = displayCanvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!ctx || !canvas) return;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const offscreenCanvas = document.createElement('canvas');
+    offscreenCanvas.width = docSettings.width;
+    offscreenCanvas.height = docSettings.height;
+    const offscreenCtx = offscreenCanvas.getContext('2d');
+    if (!offscreenCtx) return;
+
+    layers.forEach(layer => {
+      const isTransformingThisLayer = transformSession && transformSession.layerId === layer.id;
+      if (!layer.isVisible && !isTransformingThisLayer) return;
+
+      const imageData = isTransformingThisLayer ? transformSession.initialLayerState.imageData : layer.imageData;
+      if (!imageData) return;
+
+      offscreenCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+      offscreenCtx.putImageData(imageData, 0, 0);
+
+      ctx.save();
+      ctx.globalAlpha = layer.opacity;
+      ctx.globalCompositeOperation = layer.isBackground ? 'source-over' : layer.blendMode;
+      
+      if (isTransformingThisLayer) {
+        ctx.setTransform(transformSession.transform);
+        ctx.drawImage(offscreenCanvas, 0, 0);
+      } else {
+        ctx.setTransform(1, 0, 0, 1, layer.x, layer.y);
+        ctx.drawImage(offscreenCanvas, 0, 0);
+      }
+      ctx.restore();
+    });
+  }, [layers, docSettings.width, docSettings.height, transformSession]);
 
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -98,8 +141,6 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
         let dx = e.deltaX;
         let dy = e.deltaY;
         
-        // If shift is pressed and there's vertical scroll, treat it as horizontal scroll.
-        // This makes it work even if the browser doesn't convert deltaY to deltaX.
         if (e.shiftKey && dy !== 0) {
             dx += dy;
             dy = 0;
@@ -113,8 +154,7 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    // Pan with Spacebar + Click or Middle Mouse Button
-    if (e.button === 1 || e.buttons === 4 || (e.buttons === 1 && e.shiftKey)) { // Using Shift+Click for panning as Spacebar is hard to capture
+    if (e.button === 1 || e.buttons === 4 || (e.buttons === 1 && e.shiftKey)) { 
       e.preventDefault();
       isPanning.current = true;
       panStart.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
@@ -123,7 +163,6 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
   };
   
   const handleMouseMove = (e: React.MouseEvent) => {
-    // Panning
     if (isPanning.current) {
       e.preventDefault();
       setPan({
@@ -134,7 +173,6 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
   };
 
   const handleMouseUp = (e: React.MouseEvent) => {
-    // End Panning
     if (isPanning.current) {
         isPanning.current = false;
         if (containerRef.current) containerRef.current.style.cursor = 'default';
@@ -178,31 +216,6 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
   const activeLayer = layers.find(l => l.id === activeLayerId);
   const showTransformControls = activeTool === EditorTool.TRANSFORM && activeSubTool === 'transform' && activeLayer && !activeLayer.isBackground && !activeLayer.isLocked;
 
-  const getLayerStyle = (layer: Layer): React.CSSProperties => {
-    const baseStyle: React.CSSProperties = {
-        display: layer.isVisible ? 'block' : 'none',
-        opacity: layer.isBackground ? 1 : layer.opacity,
-        mixBlendMode: layer.isBackground ? 'normal' : layer.blendMode,
-        position: 'absolute',
-        top: 0, // Top/left are now handled by transform
-        left: 0,
-        width: `${docSettings.width}px`,
-        height: `${docSettings.height}px`,
-        transformOrigin: 'top left', // Use top-left origin for CSS transforms
-    };
-    
-    if (transformSession && transformSession.layerId === layer.id) {
-        // Live preview during transform
-        baseStyle.transform = transformSession.transform.toString();
-        // Render the original, untransformed image data while transforming
-    } else {
-        // Standard position for non-transforming layers
-        baseStyle.transform = `translate(${layer.x}px, ${layer.y}px)`;
-    }
-    
-    return baseStyle;
-  };
-  
   const isTransforming = !!transformSession;
   const isCropping = activeTool === EditorTool.TRANSFORM && activeSubTool === 'crop';
   
@@ -221,6 +234,8 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
     }
     return null;
   }
+  
+  const isDrawingToolActive = [EditorTool.PAINT, EditorTool.TYPE, EditorTool.SHAPES, EditorTool.SELECT].includes(activeTool);
 
   return (
     <div 
@@ -242,32 +257,39 @@ const CanvasArea: React.FC<CanvasAreaProps> = (props) => {
         className="relative transition-transform duration-150 ease-out"
         style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
       >
-        <div className="shadow-2xl bg-black relative" style={{ width: docSettings.width, height: docSettings.height }}>
-            {layers.map(layer => {
-              const imageDataToRender = (transformSession && transformSession.layerId === layer.id) 
-                ? transformSession.initialLayerState.imageData 
-                : layer.imageData;
-
-              return (
-                <div key={layer.id} style={getLayerStyle(layer)}>
-                    <Canvas
-                        width={docSettings.width}
-                        height={docSettings.height}
-                        activeTool={activeTool}
-                        isLocked={layer.isLocked || isTransforming}
-                        isBackground={layer.isBackground}
-                        onAttemptEditBackgroundLayer={onAttemptEditBackgroundLayer}
-                        selectionRect={selection?.rect || null}
-                        onSelectionChange={onSelectionChange}
-                        onSelectionPreview={onSelectionPreview}
-                        imageDataToRender={imageDataToRender}
-                        onDrawEnd={onDrawEnd}
-                        zoom={zoom}
-                        {...toolProps}
-                    />
-                </div>
-              )
-            })}
+        <div 
+            className="shadow-2xl relative" 
+            style={{ 
+                width: docSettings.width, 
+                height: docSettings.height,
+                backgroundImage: 'repeating-conic-gradient(#374151 0 25%, transparent 0 50%)', 
+                backgroundSize: '20px 20px'
+            }}
+        >
+            <canvas
+                ref={displayCanvasRef}
+                width={docSettings.width}
+                height={docSettings.height}
+                className="absolute top-0 left-0"
+            />
+            {isDrawingToolActive && (
+              <Canvas
+                  ref={interactionCanvasRef}
+                  width={docSettings.width}
+                  height={docSettings.height}
+                  activeTool={activeTool}
+                  isLocked={activeLayer?.isLocked || isTransforming}
+                  isBackground={activeLayer?.isBackground}
+                  onAttemptEditBackgroundLayer={onAttemptEditBackgroundLayer}
+                  selectionRect={selection?.rect || null}
+                  onSelectionChange={onSelectionChange}
+                  onSelectionPreview={onSelectionPreview}
+                  imageDataToRender={null} // Interaction canvas is always clear initially
+                  onDrawEnd={onDrawEnd}
+                  zoom={zoom}
+                  {...toolProps}
+              />
+            )}
              <canvas
               ref={selectionCanvasRef}
               width={docSettings.width}
